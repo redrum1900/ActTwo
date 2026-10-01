@@ -127,6 +127,14 @@ export function createProjectStore(db: Database.Database) {
       if (report.script && report.script.id !== id) report.errors.push({ path: 'manifest.json', message: '剧本 ID 不能更改' });
       return { errors: report.errors, warnings: report.warnings };
     },
+    validatedDraft(owner: string, id: string): GameScript {
+      requireOwned(owner, id);
+      const report = inspectScriptParts(parts(id));
+      if (report.script && report.script.id !== id) report.errors.push({ path: 'manifest.json', message: '剧本 ID 不能更改' });
+      if (report.errors.length || !report.script)
+        throw new ProjectError(`剧本校验失败：${report.errors.map(issue => `${issue.path} ${issue.message}`).join('；')}`);
+      return report.script;
+    },
     publish: db.transaction((owner: string, id: string): GameScript => {
       requireOwned(owner, id);
       const report = inspectScriptParts(parts(id));
