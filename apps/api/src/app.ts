@@ -4,10 +4,10 @@ import type { ChatAdapter } from './chat-service.js';
 import { runChat } from './chat-service.js';
 import { AiServiceError } from './ai-adapter.js';
 import type { SaveStore } from './save-store.js';
-import type { FieldDefinition, GameScript, GameState } from '../../../packages/contracts/src/index.js';
-import { advanceTime, canEnterLocation, createInitialState, discoverPresentNpcs, evaluateCondition, exploreSpot, makeView, refreshWorld, searchLocation, takeLocationItem } from '../../../packages/engine/src/index.js';
-import { appendActivity, settleWorld, type ActivityAction } from '../../../packages/engine/src/activity-log.js';
-import { listScripts, loadScript } from '../../../packages/script/src/index.js';
+import type { FieldDefinition, GameScript, GameState } from '@game/contracts';
+import { advanceTime, canEnterLocation, createInitialState, discoverPresentNpcs, evaluateCondition, exploreSpot, makeView, refreshWorld, searchLocation, takeLocationItem } from '@game/engine';
+import { appendActivity, settleWorld, type ActivityAction } from '@game/engine/activity-log';
+import { listScripts, loadScript } from '@game/script';
 import { createMemoryWorker } from './memory-worker.js';
 
 function readPlayer(fields: readonly FieldDefinition[], input: unknown): GameState['player'] {

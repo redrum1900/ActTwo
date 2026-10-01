@@ -1,4 +1,4 @@
-import type { ChatMessage, MemorySegment } from '../../../packages/contracts/src/index.js';
+import type { ChatMessage, MemorySegment } from '@game/contracts';
 
 export interface SelectedMemory {
   raw: ChatMessage[];

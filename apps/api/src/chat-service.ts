@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, EventDefinition, GameScript, GameState, NpcDefinition, RuleDiagnostic } from '../../../packages/contracts/src/index.js';
-import { deriveNpcSnapshot, evaluateCondition, makeView, settlePlayerEvents } from '../../../packages/engine/src/index.js';
-import { appendActivity, settleWorld } from '../../../packages/engine/src/activity-log.js';
+import type { ChatMessage, EventDefinition, GameScript, GameState, NpcDefinition, RuleDiagnostic } from '@game/contracts';
+import { deriveNpcSnapshot, evaluateCondition, makeView, settlePlayerEvents } from '@game/engine';
+import { appendActivity, settleWorld } from '@game/engine/activity-log';
 import { compressMemory, selectMemory, planCompression } from './memory-policy.js';
 
 export interface CandidateEvent { id: string; intent: string; canApply: boolean; cue?: string; positiveExamples?: readonly string[]; negativeExamples?: readonly string[] }

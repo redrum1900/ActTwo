@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import type { ChatAdapter, ChatContext } from './chat-service.js';
-import { deriveNpcSnapshot, evaluateCondition } from '../../../packages/engine/src/index.js';
+import { deriveNpcSnapshot, evaluateCondition } from '@game/engine';
 import { selectMemory, validateMemory } from './memory-policy.js';
 import { createMessageDeltaExtractor, readChatCompletionStream } from './ai-stream.js';
 

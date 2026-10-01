@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import type { Condition, Effect, GameScript } from '../../contracts/src/index.js';
+import { fileURLToPath } from 'node:url';
+import type { Condition, Effect, GameScript } from '@game/contracts';
 
-const contentRoot = path.resolve(process.cwd(), 'content');
+const contentRoot = fileURLToPath(new URL('../../../content', import.meta.url));
 const safeId = /^[a-z0-9][a-z0-9-]*$/;
 
 function readPart(gameId: string, file: string, root = contentRoot): unknown {

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { GameState } from '../../../packages/contracts/src/index.js';
+import type { GameState } from '@game/contracts';
 
 export interface SaveRecord {
   slot: number;

@@ -1,4 +1,4 @@
-import type { ChatMessage, MemoryDocument, MemorySegment } from '../../../packages/contracts/src/index.js';
+import type { ChatMessage, MemoryDocument, MemorySegment } from '@game/contracts';
 import type { ChatContext } from './chat-service.js';
 
 const categories = ['facts', 'relationship', 'commitments', 'boundaries', 'openTopics'] as const;

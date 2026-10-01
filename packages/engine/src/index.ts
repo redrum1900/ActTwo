@@ -1,4 +1,4 @@
-import type { Condition, Effect, GameScript, GameState, Owner } from '../../contracts/src/index.js';
+import type { Condition, Effect, GameScript, GameState, Owner } from '@game/contracts';
 import { syncInventories } from './inventory-projection.js';
 
 export function createInitialState(script: GameScript, player: GameState['player']): GameState {

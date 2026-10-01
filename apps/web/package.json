@@ -1,0 +1,16 @@
+{
+  "name": "@game/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config ../../vite.config.ts --host 127.0.0.1",
+    "build": "vite build --config ../../vite.config.ts",
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@game/contracts": "*",
+    "@game/engine": "*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}

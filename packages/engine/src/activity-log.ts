@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ActivityDetail, ActivityEntry, GameScript, GameState } from '../../contracts/src/index.js';
+import type { ActivityDetail, ActivityEntry, GameScript, GameState } from '@game/contracts';
 import { evaluateCondition, refreshWorld, runAutomaticRules } from './index.js';
 
 export interface ActivityAction {

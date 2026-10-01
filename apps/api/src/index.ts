@@ -1,12 +1,14 @@
 import 'dotenv/config';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { createApp } from './app.js';
 import { createSaveStore } from './save-store.js';
 import { createChatAdapter, createCombinedChatAdapter } from './ai-adapter.js';
 
-const dataDir = path.resolve(process.cwd(), 'data');
+const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
+const dataDir = path.join(projectRoot, 'data');
 mkdirSync(dataDir, { recursive: true });
 const numberEnv = (name: string, fallback: number, min: number, max: number, integer = false) => {
   const raw = process.env[name];
@@ -29,7 +31,7 @@ const adapter = (chatMode === 'combined' ? createCombinedChatAdapter : createCha
     classify: utilityTemperature, rewrite: utilityTemperature, summarize: utilityTemperature },
 });
 const app = createApp(store, adapter, { debugEnabled: process.env.NODE_ENV !== 'production' && process.env.GAME_DEV_DEBUG === '1' });
-if (process.env.NODE_ENV === 'production') app.use(express.static(path.resolve(process.cwd(), 'dist/web')));
+if (process.env.NODE_ENV === 'production') app.use(express.static(path.join(projectRoot, 'dist/web')));
 const port = Number(process.env.PORT || 3001);
 const host = process.env.GAME_API_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
 app.listen(port, host, () => console.log(`Game DD API listening on http://${host}:${port} (${adapter.mode})`));

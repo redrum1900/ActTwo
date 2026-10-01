@@ -1,4 +1,4 @@
-import type { GameState } from '../../contracts/src/index.js';
+import type { GameState } from '@game/contracts';
 
 /** Refreshes the public inventory counts from the canonical itemStates owner map. */
 export function syncInventories(state: GameState): GameState {

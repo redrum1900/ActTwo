@@ -1,4 +1,4 @@
-import type { GameScript } from '../../../packages/contracts/src/index.js';
+import type { GameScript } from '@game/contracts';
 import type { SaveRecord, SaveStore } from './save-store.js';
 import { deriveChatContext, type ChatAdapter } from './chat-service.js';
 import { compressMemory } from './memory-policy.js';

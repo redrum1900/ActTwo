@@ -1,5 +1,5 @@
-import type { FieldDefinition } from '../../../packages/contracts/src/index.js';
-import type { makeView } from '../../../packages/engine/src/index.js';
+import type { FieldDefinition } from '@game/contracts';
+import type { makeView } from '@game/engine';
 
 export type GameView = ReturnType<typeof makeView>;
 export interface CatalogGame {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { FieldDefinition } from '../../../packages/contracts/src/index.js';
+import type { FieldDefinition } from '@game/contracts';
 import { api, post, postChatStream, type CatalogGame, type GameDetail, type SessionPayload, type SlotSummary } from './api.js';
 import { appendPendingDraft, beginPendingTurn, failPendingTurn, npcLeftCurrentLocation, type PendingTurn } from './chat-stream.js';
 import { npcChannelLabel } from './npc-channel.js';
