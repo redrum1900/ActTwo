@@ -5,13 +5,16 @@ import { createSaveStore } from '../apps/api/src/save-store.js';
 import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
 import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
 import { createProjectStore } from '../apps/api/src/creator/project-store.js';
+import { createReviewStore } from '../apps/api/src/creator/review-store.js';
 import { createScriptRepository } from '../apps/api/src/script-repository.js';
 
 test('draft stays private, published snapshot is playable, and deletion unlists without wiping saves', async () => {
   const creators = createCreatorStore(':memory:');
   const projects = createProjectStore(creators.db);
+  const reviews = createReviewStore(creators.db, projects);
   const saves = createSaveStore(':memory:');
   const author = creators.register('author', 'author-password-1').account.id;
+  const admin = creators.createAdmin('moderator', 'moderator-password-1').id;
   projects.create(author, 'public-story', '公开故事');
   const server = createApp(saves, createChatAdapter({}), { scripts: createScriptRepository(projects) }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
@@ -26,7 +29,9 @@ test('draft stays private, published snapshot is playable, and deletion unlists 
   };
   try {
     assert.equal((await request('/api/catalog')).data.games.some((game: any) => game.id === 'public-story'), false);
-    projects.publish(author, 'public-story');
+    const submitted = reviews.submit(author, 'public-story');
+    assert.equal((await request('/api/catalog')).data.games.some((game: any) => game.id === 'public-story'), false);
+    reviews.approve(admin, submitted.id);
     assert.equal((await request('/api/catalog')).data.games.some((game: any) => game.id === 'public-story'), true);
     assert.equal((await request('/api/games/public-story/new', 'POST', { player: { name: '小夏' } })).status, 200);
     const manifest = projects.get(author, 'public-story')!.sections['manifest.json'];

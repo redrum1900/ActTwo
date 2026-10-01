@@ -135,20 +135,6 @@ export function createProjectStore(db: Database.Database) {
         throw new ProjectError(`剧本校验失败：${report.errors.map(issue => `${issue.path} ${issue.message}`).join('；')}`);
       return report.script;
     },
-    publish: db.transaction((owner: string, id: string): GameScript => {
-      requireOwned(owner, id);
-      const report = inspectScriptParts(parts(id));
-      if (report.script && report.script.id !== id) report.errors.push({ path: 'manifest.json', message: '剧本 ID 不能更改' });
-      if (report.errors.length || !report.script) throw new ProjectError(`剧本校验失败：${report.errors.map(issue => `${issue.path} ${issue.message}`).join('；')}`);
-      const script = report.script;
-      const timestamp = now();
-      db.prepare(`INSERT INTO published_scripts(project_id,script_json,version,content_hash,published_at) VALUES(?,?,?,?,?)
-        ON CONFLICT(project_id) DO UPDATE SET script_json=excluded.script_json,version=excluded.version,
-        content_hash=excluded.content_hash,published_at=excluded.published_at`)
-        .run(id, JSON.stringify(script), script.version, script.contentHash, timestamp);
-      db.prepare('UPDATE creator_projects SET published_at=? WHERE id=?').run(timestamp, id);
-      return script;
-    }),
     delete(owner: string, id: string) {
       requireOwned(owner, id);
       db.prepare('UPDATE creator_projects SET deleted_at=?,updated_at=? WHERE id=?').run(now(), now(), id);

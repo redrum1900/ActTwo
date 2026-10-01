@@ -5,12 +5,14 @@ import { createSaveStore } from '../apps/api/src/save-store.js';
 import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
 import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
 import { createProjectStore } from '../apps/api/src/creator/project-store.js';
+import { createReviewStore } from '../apps/api/src/creator/review-store.js';
 
 test('creator API isolates owners and publishes only valid drafts', async () => {
   const creators = createCreatorStore(':memory:');
   const projects = createProjectStore(creators.db);
+  const reviews = createReviewStore(creators.db, projects);
   const saves = createSaveStore(':memory:');
-  const server = createApp(saves, createChatAdapter({}), { creatorStore: creators, projectStore: projects }).listen(0);
+  const server = createApp(saves, createChatAdapter({}), { creatorStore: creators, projectStore: projects, reviewStore: reviews }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   let cookie = '';
@@ -32,7 +34,8 @@ test('creator API isolates owners and publishes only valid drafts', async () => 
     assert.equal((await call('/projects/story-one/sections', 'PUT', { path: 'manifest.json', content: old.content, revision: 1 })).status, 200);
     assert.equal((await call('/projects/story-one/sections', 'PUT', { path: 'manifest.json', content: old.content, revision: 1 })).status, 409);
     assert.equal((await call('/projects/story-one/validate', 'POST')).data.errors.length, 0);
-    assert.equal((await call('/projects/story-one/publish', 'POST')).status, 200);
+    assert.equal((await call('/projects/story-one/submit', 'POST')).status, 201);
+    assert.equal((await call('/projects/story-one')).data.review.status, 'pending');
     await call('/logout', 'POST');
     await call('/register', 'POST', { username: 'bobby', password: 'bobby-password-1' });
     assert.equal((await call('/projects/story-one')).status, 404);

@@ -13,6 +13,8 @@ import { createCreatorRouter } from './creator/auth-router.js';
 import type { CreatorStore } from './creator/auth-store.js';
 import { createProjectRouter } from './creator/project-router.js';
 import type { ProjectStore } from './creator/project-store.js';
+import { createReviewRouter } from './creator/review-router.js';
+import type { ReviewStore } from './creator/review-store.js';
 
 function readPlayer(fields: readonly FieldDefinition[], input: unknown): GameState['player'] {
   const values = (input && typeof input === 'object' && !Array.isArray(input)) ? input as Record<string, unknown> : {};
@@ -42,14 +44,17 @@ function visiblePayload(script: GameScript, state: GameState, revision: number, 
   return { view, revision, hints, aiMode: adapter.mode };
 }
 
-export function createApp(store: SaveStore, adapter: ChatAdapter, options: { debugEnabled?: boolean; creatorStore?: CreatorStore; projectStore?: ProjectStore; scripts?: ScriptRepository } = {}) {
+export function createApp(store: SaveStore, adapter: ChatAdapter, options: { debugEnabled?: boolean; creatorStore?: CreatorStore; projectStore?: ProjectStore; reviewStore?: ReviewStore; scripts?: ScriptRepository } = {}) {
   const app = express();
   const scripts = options.scripts ?? createScriptRepository(options.projectStore);
   const queueMemory = createMemoryWorker(store, adapter);
   const inFlightTurns = new Map<string, { npcId: string; text: string; task: Promise<{ game: GameScript; save: NonNullable<ReturnType<SaveStore['getAuto']>>; result: Awaited<ReturnType<typeof runChat>> }> }>();
   app.use(express.json({ limit: '2mb' }));
   if (options.creatorStore) app.use('/api/creator', createCreatorRouter(options.creatorStore));
-  if (options.creatorStore && options.projectStore) app.use('/api/creator', createProjectRouter(options.creatorStore, options.projectStore));
+  if (options.creatorStore && options.projectStore && options.reviewStore)
+    app.use('/api/creator', createProjectRouter(options.creatorStore, options.projectStore, options.reviewStore));
+  if (options.creatorStore && options.reviewStore)
+    app.use('/api/creator/reviews', createReviewRouter(options.creatorStore, options.reviewStore));
   app.use('/api', (req, res, next) => {
     const cookie = req.headers.cookie?.match(/(?:^|;\s*)gd_guest=([a-f0-9-]{36})(?:;|$)/)?.[1];
     const owner = cookie ?? randomUUID();
