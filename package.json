@@ -9,6 +9,7 @@
     "dev:web": "npm run dev --workspace @game/web",
     "test": "tsx --test tests/*.test.ts",
     "ai:cost": "tsx scripts/ai-cost-report.ts",
+    "admin:create": "tsx scripts/create-admin.ts",
     "build": "tsc --noEmit && npm run build --workspace @game/web",
     "start": "npm run start --workspace @game/api"
   },

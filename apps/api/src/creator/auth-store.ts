@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import Database from 'better-sqlite3';
 
-export interface CreatorAccount { id: string; username: string }
+export interface CreatorAccount { id: string; username: string; role: 'author' | 'admin' }
 const sessionDays = 30;
 const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
 const passwordHash = (password: string, salt: string) => scryptSync(password, salt, 64).toString('hex');
@@ -17,7 +17,8 @@ export function createCreatorStore(filename: string) {
       username TEXT NOT NULL UNIQUE COLLATE NOCASE,
       password_salt TEXT NOT NULL,
       password_hash TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'author' CHECK(role IN ('author','admin'))
     );
     CREATE TABLE IF NOT EXISTS creator_sessions (
       token_hash TEXT PRIMARY KEY,
@@ -26,6 +27,9 @@ export function createCreatorStore(filename: string) {
     );
     CREATE INDEX IF NOT EXISTS creator_sessions_account ON creator_sessions(account_id);
   `);
+  const columns = db.pragma('table_info(creator_accounts)') as { name: string }[];
+  if (!columns.some(column => column.name === 'role'))
+    db.exec("ALTER TABLE creator_accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'author' CHECK(role IN ('author','admin'))");
 
   const issueSession = (account: CreatorAccount) => {
     const token = randomBytes(32).toString('base64url');
@@ -40,24 +44,35 @@ export function createCreatorStore(filename: string) {
       if (!validUsername(username)) throw new Error('用户名须为 3–32 位英文字母、数字、下划线或短横线，并以字母开头');
       if (!validPassword(password)) throw new Error('密码须为 10–128 位');
       if (db.prepare('SELECT id FROM creator_accounts WHERE username = ?').get(username)) throw new Error('用户名已存在');
-      const account = { id: randomUUID(), username };
+      const account: CreatorAccount = { id: randomUUID(), username, role: 'author' };
       const salt = randomBytes(16).toString('hex');
       db.prepare('INSERT INTO creator_accounts (id, username, password_salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?)')
         .run(account.id, username, salt, passwordHash(password, salt), new Date().toISOString());
       return issueSession(account);
     },
+    createAdmin(rawUsername: string, password: string): CreatorAccount {
+      const username = rawUsername.trim().toLowerCase();
+      if (!validUsername(username)) throw new Error('用户名须为 3–32 位英文字母、数字、下划线或短横线，并以字母开头');
+      if (!validPassword(password)) throw new Error('密码须为 10–128 位');
+      if (db.prepare('SELECT id FROM creator_accounts WHERE username=?').get(username)) throw new Error('用户名已存在');
+      const account: CreatorAccount = { id: randomUUID(), username, role: 'admin' };
+      const salt = randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO creator_accounts (id,username,password_salt,password_hash,created_at,role) VALUES (?,?,?,?,?,?)')
+        .run(account.id, username, salt, passwordHash(password, salt), new Date().toISOString(), account.role);
+      return account;
+    },
     login(rawUsername: string, password: string) {
-      const row = db.prepare('SELECT id, username, password_salt, password_hash FROM creator_accounts WHERE username = ?')
+      const row = db.prepare('SELECT id, username, role, password_salt, password_hash FROM creator_accounts WHERE username = ?')
         .get(rawUsername.trim().toLowerCase()) as (CreatorAccount & { password_salt: string; password_hash: string }) | undefined;
       if (!row || typeof password !== 'string') return null;
       const actual = Buffer.from(passwordHash(password, row.password_salt), 'hex');
       const expected = Buffer.from(row.password_hash, 'hex');
       if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
-      return issueSession({ id: row.id, username: row.username });
+      return issueSession({ id: row.id, username: row.username, role: row.role });
     },
     accountFor(token: string | undefined): CreatorAccount | null {
       if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-      const row = db.prepare(`SELECT a.id, a.username FROM creator_sessions s JOIN creator_accounts a ON a.id=s.account_id
+      const row = db.prepare(`SELECT a.id, a.username, a.role FROM creator_sessions s JOIN creator_accounts a ON a.id=s.account_id
         WHERE s.token_hash=? AND s.expires_at>?`).get(tokenHash(token), Date.now()) as CreatorAccount | undefined;
       return row ?? null;
     },

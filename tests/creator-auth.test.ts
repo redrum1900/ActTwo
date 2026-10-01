@@ -21,9 +21,10 @@ test('creator accounts have durable login sessions separate from guest saves', a
   };
   try {
     assert.equal((await request('/me')).response.status, 401);
-    const registration = await request('/register', 'POST', { username: 'author_one', password: 'correct-horse-42' });
+    const registration = await request('/register', 'POST', { username: 'author_one', password: 'correct-horse-42', role: 'admin' });
     assert.equal(registration.response.status, 201);
     assert.equal(registration.data.username, 'author_one');
+    assert.equal(registration.data.role, 'author');
     assert.match(registration.response.headers.get('set-cookie') ?? '', /HttpOnly/);
     assert.match(registration.response.headers.get('set-cookie') ?? '', /SameSite=Lax/);
     assert.equal((await request('/me')).data.username, 'author_one');

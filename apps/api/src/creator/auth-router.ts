@@ -20,7 +20,7 @@ export function createCreatorRouter(store: CreatorStore) {
     }
     next();
   });
-  const loginResponse = (res: Response, result: { account: { id: string; username: string }; token: string }, status = 200) => {
+  const loginResponse = (res: Response, result: { account: { id: string; username: string; role: 'author' | 'admin' }; token: string }, status = 200) => {
     res.cookie(cookieName, result.token, cookieOptions());
     return res.status(status).json(result.account);
   };
