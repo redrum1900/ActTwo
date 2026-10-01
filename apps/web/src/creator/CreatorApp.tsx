@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { creatorApi, type Account, type Project, type ProjectSummary, type Report } from './client.js';
 import { groupedSections, labelOf } from './sections.js';
 import SectionEditor from './SectionEditor.js';
+import ReviewWorkspace from './ReviewWorkspace.js';
+import { homeForRole, reviewStatusLabel } from './review-ui.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
@@ -32,7 +34,8 @@ export default function CreatorApp() {
   const revision = useRef(1);
 
   const refreshList = async () => { const data = await creatorApi.list(); setProjects(data.projects); };
-  useEffect(() => { void creatorApi.me().then(async user => { setAccount(user); await refreshList(); })
+  useEffect(() => { void creatorApi.me().then(async user => { setAccount(user); if (user.role === 'admin') window.history.replaceState({}, '', '/creator/review');
+    else await refreshList(); })
     .catch(() => {}).finally(() => setLoading(false)); }, []);
 
   const openProject = (next: Project) => {
@@ -46,7 +49,7 @@ export default function CreatorApp() {
     window.history.replaceState({}, '', `/creator/${encodeURIComponent(next.id)}`);
   };
   useEffect(() => {
-    if (!account || project) return;
+    if (!account || account.role === 'admin' || project) return;
     const id = decodeURIComponent(window.location.pathname.split('/')[2] ?? '');
     if (id) void creatorApi.get(id).then(openProject).catch(error => setMessage(errorText(error)));
   }, [account]);
@@ -100,7 +103,8 @@ export default function CreatorApp() {
   const authenticate = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage('');
     try { const user = authMode === 'login' ? await creatorApi.login(username, password) : await creatorApi.register(username, password);
-      setAccount(user); setPassword(''); await refreshList(); }
+      setAccount(user); setPassword(''); if (user.role === 'admin') window.history.replaceState({}, '', '/creator/review');
+      else await refreshList(); }
     catch (error) { setMessage(errorText(error)); }
   };
   const create = async (event: React.FormEvent) => {
@@ -122,10 +126,10 @@ export default function CreatorApp() {
     openProject(next);
   });
   const validate = () => void runAfterSave(async () => { setReport(await creatorApi.validate(project!.id)); });
-  const publish = () => void runAfterSave(async () => {
+  const submit = () => void runAfterSave(async () => {
     const check = await creatorApi.validate(project!.id); setReport(check);
-    if (check.errors.length) { setMessage('校验未通过，不能发布。'); return; }
-    await creatorApi.publish(project!.id); setMessage('发布成功，玩家现在可以在故事目录中找到这个版本。');
+    if (check.errors.length) { setMessage('校验未通过，不能提交审核。'); return; }
+    await creatorApi.submit(project!.id); setMessage('提交成功，正在等待管理员审核；尚未更新玩家目录。');
     const next = await creatorApi.get(project!.id); projectRef.current = next; setProject(next);
   });
   const deleteProject = () => void runAfterSave(async () => {
@@ -138,12 +142,12 @@ export default function CreatorApp() {
   if (loading) return <div className="creator-loading">正在打开创作中心…</div>;
   return <div className="creator-app">
     <header className="creator-header"><a className="creator-brand" href="/">叙事档案 <span>／ 创作中心</span></a>
-      <div className="creator-header-right"><a href="/">玩家入口 ↗</a>{account && <><span>{account.username}</span><button onClick={() => void runAfterSave(async () => {
+      <div className="creator-header-right"><a href="/">玩家入口 ↗</a>{account && <><span>{account.username}{account.role === 'admin' ? ' · 管理员' : ''}</span><button onClick={() => void runAfterSave(async () => {
         await creatorApi.logout(); setAccount(null); setProject(null); projectRef.current = null;
         window.history.replaceState({}, '', '/creator'); })}>退出</button></>}</div></header>
     {!account ? <main className="creator-auth"><div className="creator-auth-copy"><div className="creator-kicker">WRITE YOUR OWN WORLD</div>
-      <h1>让故事，<br /><em>从这里开始。</em></h1><p>创建角色、地点和规则，随时保存草稿。完成校验后，一键将故事发布到玩家目录。</p>
-      <div className="creator-auth-lines"><span>01 / 定义世界</span><span>02 / 塑造角色</span><span>03 / 发布故事</span></div></div>
+      <h1>让故事，<br /><em>从这里开始。</em></h1><p>创建角色、地点和规则，随时保存草稿。完成校验后提交审核，通过后故事会出现在玩家目录。</p>
+      <div className="creator-auth-lines"><span>01 / 定义世界</span><span>02 / 塑造角色</span><span>03 / 提交审核</span></div></div>
       <form className="creator-auth-card" onSubmit={authenticate}><div className="creator-kicker">AUTHOR ACCESS</div><h2>{authMode === 'login' ? '欢迎回来' : '创建创作者账号'}</h2>
         <label>用户名<input autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} required /></label>
         <label>密码<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} value={password}
@@ -151,13 +155,14 @@ export default function CreatorApp() {
         <button className="creator-primary" type="submit">{authMode === 'login' ? '登录创作中心' : '注册并开始创作'} <span>↗</span></button>
         <button className="creator-text-button" type="button" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setMessage(''); }}>
           {authMode === 'login' ? '没有账号？注册一个' : '已有账号？返回登录'}</button>{message && <p className="creator-error" role="alert">{message}</p>}</form></main>
+      : homeForRole(account.role) === 'review' ? <ReviewWorkspace />
       : !project ? <main className="creator-library"><div className="creator-kicker">YOUR WORKSPACE / {account.username}</div>
         <div className="creator-library-title"><div><h1>我的故事</h1><p>每个故事由你独立管理。草稿保存后不会影响已经发布的版本。</p></div>
           <button className="creator-primary" onClick={() => { setShowCreate(true); void creatorApi.templates().then(data => setTemplates(data.templates)); }}>＋ 新建故事</button></div>
         {message && <p className="creator-error" role="alert">{message}</p>}
         {projects.length ? <div className="creator-project-grid">{projects.map(entry => <button key={entry.id} className="creator-project-card"
           onClick={() => void creatorApi.get(entry.id).then(openProject).catch(error => setMessage(errorText(error)))}>
-          <span className="creator-project-state">{entry.publishedAt ? '● 已发布' : '○ 草稿'}</span><h2>{entry.title}</h2><span>{entry.id}</span>
+          <span className="creator-project-state">{reviewStatusLabel(entry)}</span><h2>{entry.title}</h2><span>{entry.id}</span>
           <footer><span>最近编辑 {new Date(entry.updatedAt).toLocaleDateString('zh-CN')}</span><strong>继续编辑 ↗</strong></footer></button>)}</div>
           : <div className="creator-library-empty"><span>✳</span><h2>还没有故事</h2><p>从一张空白纸开始，或复制内置故事作为模板。</p></div>}
         {showCreate && <div className="creator-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowCreate(false); }}><form className="creator-modal" onSubmit={create}>
@@ -170,7 +175,7 @@ export default function CreatorApp() {
           <div className="creator-modal-actions"><button type="button" onClick={() => setShowCreate(false)}>取消</button><button className="creator-primary" type="submit">创建故事 ↗</button></div>
           {message && <p className="creator-error" role="alert">{message}</p>}</form></div>}</main>
         : <div className="creator-workspace"><aside className="creator-sidebar"><button className="creator-back" onClick={leaveProject}>← 我的故事</button>
-          <div className="creator-story-heading"><div className="creator-kicker">STORY / {project.id}</div><h1>{project.title}</h1><span>{project.publishedAt ? '● 已发布 · 草稿可继续编辑' : '○ 未发布草稿'}</span></div>
+          <div className="creator-story-heading"><div className="creator-kicker">STORY / {project.id}</div><h1>{project.title}</h1><span>{reviewStatusLabel(project)} · 草稿可继续编辑</span></div>
           <nav aria-label="配置项"><div className="creator-nav-title">剧本</div>{groups!.root.map(entry => <button key={entry} className={path === entry ? 'active' : ''} onClick={() => void switchPath(entry)}>{labelOf(entry).name}</button>)}
             <div className="creator-nav-title">玩家</div>{groups!.player.map(entry => <button key={entry} className={path === entry ? 'active' : ''} onClick={() => void switchPath(entry)}>{labelOf(entry).name}</button>)}
             <div className="creator-nav-title creator-nav-title-between">角色 <button onClick={addNpc} aria-label="添加 NPC">＋</button></div>
@@ -180,9 +185,13 @@ export default function CreatorApp() {
                 onClick={() => void switchPath(entry)}>{labelOf(entry).name}</button>)}</div>)}</nav></aside>
           <main className="creator-main"><div className="creator-toolbar"><span className={`creator-save-status ${saveState}`}>
             {saveState === 'saved' ? '✓ 已保存' : saveState === 'dirty' ? '● 待保存' : saveState === 'saving' ? '◌ 保存中' : saveState === 'conflict' ? '! 编辑冲突' : '! 保存失败'}</span>
-            <div><button onClick={validate}>校验配置</button><button className="creator-primary" onClick={publish}>发布故事 ↗</button></div></div>
-            {message && <div className={message.startsWith('发布成功') ? 'creator-success' : 'creator-error'} role="status">{message}</div>}
-            {report && <div className="creator-report"><strong>{report.errors.length ? `校验发现 ${report.errors.length} 个错误` : '校验通过，可以发布'}</strong>
+            <div><button onClick={validate}>校验配置</button><button className="creator-primary" disabled={project.review?.status === 'pending'} onClick={submit}>
+              {project.review?.status === 'pending' ? '等待审核' : '提交审核 ↗'}</button></div></div>
+            {project.review?.status === 'rejected' && project.review.rejectionReason && <div className="creator-review-reason" role="status">
+              <strong>上次提交未通过</strong><p>{project.review.rejectionReason}</p></div>}
+            {project.review?.status === 'pending' && <div className="creator-review-note">已提交的版本正在审核。你可以继续编辑草稿，但不会改变待审内容。</div>}
+            {message && <div className={message.startsWith('提交成功') ? 'creator-success' : 'creator-error'} role="status">{message}</div>}
+            {report && <div className="creator-report"><strong>{report.errors.length ? `校验发现 ${report.errors.length} 个错误` : '校验通过，可以提交审核'}</strong>
               {[...report.errors, ...report.warnings].map((issue, index) => <button key={index} onClick={() => { const target = Object.keys(project.sections).find(entry => issue.path.startsWith(entry)); if (target) void switchPath(target); }}>
                 <code>{issue.path}</code> {issue.message}</button>)}</div>}
             <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} />

@@ -1,11 +1,15 @@
 import { api } from '../api.js';
 
-export interface ProjectSummary { id: string; title: string; createdAt: string; updatedAt: string; publishedAt: string | null }
+export interface ReviewSummary { id: string; projectId: string; projectTitle: string; authorId: string; authorUsername: string;
+  contentHash: string; version: string; status: 'pending' | 'approved' | 'rejected'; submittedAt: string;
+  reviewedAt: string | null; reviewerId: string | null; rejectionReason: string | null }
+export interface ReviewDetail extends ReviewSummary { script: Record<string, unknown> }
+export interface ProjectSummary { id: string; title: string; createdAt: string; updatedAt: string; publishedAt: string | null; review: ReviewSummary | null }
 export interface Section { content: string; revision: number; updatedAt: string }
 export interface Project extends ProjectSummary { sections: Record<string, Section> }
 export interface Issue { path: string; message: string }
 export interface Report { errors: Issue[]; warnings: Issue[] }
-export interface Account { id: string; username: string }
+export interface Account { id: string; username: string; role: 'author' | 'admin' }
 
 const base = '/creator';
 export const creatorApi = {
@@ -23,6 +27,11 @@ export const creatorApi = {
     { method: 'POST', body: JSON.stringify({ id: npcId, name }) }),
   removeNpc: (id: string, npcId: string) => api<Project>(`${base}/projects/${encodeURIComponent(id)}/npcs/${encodeURIComponent(npcId)}`, { method: 'DELETE' }),
   validate: (id: string) => api<Report>(`${base}/projects/${encodeURIComponent(id)}/validate`, { method: 'POST' }),
-  publish: (id: string) => api<{ id: string; title: string; version: string }>(`${base}/projects/${encodeURIComponent(id)}/publish`, { method: 'POST' }),
+  submit: (id: string) => api<ReviewSummary>(`${base}/projects/${encodeURIComponent(id)}/submit`, { method: 'POST' }),
+  reviews: () => api<{ reviews: ReviewSummary[] }>(`${base}/reviews`),
+  review: (id: string) => api<ReviewDetail>(`${base}/reviews/${encodeURIComponent(id)}`),
+  approve: (id: string) => api<ReviewDetail>(`${base}/reviews/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
+  reject: (id: string, reason: string) => api<ReviewDetail>(`${base}/reviews/${encodeURIComponent(id)}/reject`,
+    { method: 'POST', body: JSON.stringify({ reason }) }),
   delete: (id: string) => api<{ ok: boolean }>(`${base}/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };

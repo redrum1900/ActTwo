@@ -47,9 +47,13 @@ export function createProjectRouter(accounts: CreatorStore, projects: ProjectSto
   router.post('/projects/:id/npcs', handle(req => {
     const { id, name } = req.body ?? {};
     if (typeof id !== 'string' || typeof name !== 'string') throw new ProjectError('请输入 NPC ID 和名称');
-    return projects.addNpc(owner(req), req.params.id as string, id, name);
+    const project = projects.addNpc(owner(req), req.params.id as string, id, name);
+    return { ...project, review: reviews.latestForProject(owner(req), project.id) };
   }, 201));
-  router.delete('/projects/:id/npcs/:npcId', handle(req => projects.removeNpc(owner(req), req.params.id as string, req.params.npcId as string)));
+  router.delete('/projects/:id/npcs/:npcId', handle(req => {
+    const project = projects.removeNpc(owner(req), req.params.id as string, req.params.npcId as string);
+    return { ...project, review: reviews.latestForProject(owner(req), project.id) };
+  }));
   router.post('/projects/:id/validate', handle(req => projects.validate(owner(req), req.params.id as string)));
   router.post('/projects/:id/submit', handle(req => {
     const { script: _script, ...submission } = reviews.submit(owner(req), req.params.id as string);

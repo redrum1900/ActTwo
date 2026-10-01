@@ -36,6 +36,7 @@ test('creator API isolates owners and publishes only valid drafts', async () => 
     assert.equal((await call('/projects/story-one/validate', 'POST')).data.errors.length, 0);
     assert.equal((await call('/projects/story-one/submit', 'POST')).status, 201);
     assert.equal((await call('/projects/story-one')).data.review.status, 'pending');
+    assert.equal((await call('/projects/story-one/npcs', 'POST', { id: 'friend', name: '朋友' })).data.review.status, 'pending');
     await call('/logout', 'POST');
     await call('/register', 'POST', { username: 'bobby', password: 'bobby-password-1' });
     assert.equal((await call('/projects/story-one')).status, 404);
