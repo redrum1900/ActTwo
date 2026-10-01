@@ -65,7 +65,7 @@ export function contentHashOf(script: GameScript): string {
   return createHash('sha256').update(JSON.stringify(content)).digest('hex');
 }
 
-function normalizeScriptReferences(script: GameScript): void {
+export function normalizeScriptReferences(script: GameScript): void {
   const resolve = (entries: readonly { id: string; name: string }[], reference: string): string => {
     if (entries.some((entry) => entry.id === reference)) return reference;
     const matches = entries.filter((entry) => entry.name === reference);

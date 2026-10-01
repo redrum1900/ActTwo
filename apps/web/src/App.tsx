@@ -170,7 +170,7 @@ export default function App() {
     {notice && <div className="floating-alert notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')}>×</button></div>}
 
     {screen === 'catalog' && <main className="catalog-screen page-enter">
-      <header className="site-header"><div className="brand-mark">叙事<span>档案</span><small>INTERACTIVE STORIES</small></div><span className="header-note">一套系统，无数段人生</span></header>
+      <header className="site-header"><div className="brand-mark">叙事<span>档案</span><small>INTERACTIVE STORIES</small></div><div className="catalog-header-actions"><span className="header-note">一套系统，无数段人生</span><a href="/creator">创作中心 ↗</a></div></header>
       <section className="catalog-hero"><div className="eyebrow">THE STORY LIBRARY / 故事目录</div><h1>走进故事，<br /><em>留下你的版本。</em></h1><p>在不同的世界中认识角色，与他们对话。每个选择和发现，都会写入属于你的档案。</p></section>
       <div className="section-head"><span>可进入的故事</span><span>{catalog.length.toString().padStart(2, '0')} 部</span></div>
       <div className="catalog-grid">{catalog.map((entry, index) => <button className="game-card" key={entry.id} onClick={() => openGame(entry.id)}>

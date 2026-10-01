@@ -2,6 +2,9 @@
   "name": "@game/script",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./parts": "./src/parts.ts"
+  },
   "dependencies": { "@game/contracts": "*" }
 }

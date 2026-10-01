@@ -7,10 +7,12 @@ import type { SaveStore } from './save-store.js';
 import type { FieldDefinition, GameScript, GameState } from '@game/contracts';
 import { advanceTime, canEnterLocation, createInitialState, discoverPresentNpcs, evaluateCondition, exploreSpot, makeView, refreshWorld, searchLocation, takeLocationItem } from '@game/engine';
 import { appendActivity, settleWorld, type ActivityAction } from '@game/engine/activity-log';
-import { listScripts, loadScript } from '@game/script';
+import { createScriptRepository, type ScriptRepository } from './script-repository.js';
 import { createMemoryWorker } from './memory-worker.js';
 import { createCreatorRouter } from './creator/auth-router.js';
 import type { CreatorStore } from './creator/auth-store.js';
+import { createProjectRouter } from './creator/project-router.js';
+import type { ProjectStore } from './creator/project-store.js';
 
 function readPlayer(fields: readonly FieldDefinition[], input: unknown): GameState['player'] {
   const values = (input && typeof input === 'object' && !Array.isArray(input)) ? input as Record<string, unknown> : {};
@@ -40,12 +42,14 @@ function visiblePayload(script: GameScript, state: GameState, revision: number, 
   return { view, revision, hints, aiMode: adapter.mode };
 }
 
-export function createApp(store: SaveStore, adapter: ChatAdapter, options: { debugEnabled?: boolean; creatorStore?: CreatorStore } = {}) {
+export function createApp(store: SaveStore, adapter: ChatAdapter, options: { debugEnabled?: boolean; creatorStore?: CreatorStore; projectStore?: ProjectStore; scripts?: ScriptRepository } = {}) {
   const app = express();
+  const scripts = options.scripts ?? createScriptRepository(options.projectStore);
   const queueMemory = createMemoryWorker(store, adapter);
   const inFlightTurns = new Map<string, { npcId: string; text: string; task: Promise<{ game: GameScript; save: NonNullable<ReturnType<SaveStore['getAuto']>>; result: Awaited<ReturnType<typeof runChat>> }> }>();
   app.use(express.json({ limit: '2mb' }));
   if (options.creatorStore) app.use('/api/creator', createCreatorRouter(options.creatorStore));
+  if (options.creatorStore && options.projectStore) app.use('/api/creator', createProjectRouter(options.creatorStore, options.projectStore));
   app.use('/api', (req, res, next) => {
     const cookie = req.headers.cookie?.match(/(?:^|;\s*)gd_guest=([a-f0-9-]{36})(?:;|$)/)?.[1];
     const owner = cookie ?? randomUUID();
@@ -55,7 +59,7 @@ export function createApp(store: SaveStore, adapter: ChatAdapter, options: { deb
   });
 
   const owner = (res: Response) => res.locals.owner as string;
-  const script = (req: Request) => loadScript(req.params.gameId as string);
+  const script = (req: Request) => scripts.get(req.params.gameId as string);
   const compatible = (game: GameScript, state: GameState) => state.scriptVersion === game.version && state.scriptHash === game.contentHash &&
     game.npcs.every((npc) => !npc.indicators || npc.indicators.every((indicator) => state.npcIndicators?.[npc.id]?.[indicator.id] !== undefined));
   const current = (req: Request, res: Response) => {
@@ -81,7 +85,7 @@ export function createApp(store: SaveStore, adapter: ChatAdapter, options: { deb
     res.json(currentPayload(res, game, save, extra));
 
   app.get('/api/catalog', (_req, res) => {
-    res.json({ games: listScripts().map((game) => ({ id: game.id, version: game.version, title: game.title, subtitle: game.subtitle, cover: game.cover,
+    res.json({ games: scripts.list().map((game) => ({ id: game.id, version: game.version, title: game.title, subtitle: game.subtitle, cover: game.cover,
       description: game.description, hasAuto: !!store.getAuto(owner(res), game.id) && compatible(game, store.getAuto(owner(res), game.id)!.state) })) });
   });
   app.get('/api/games/:gameId', (req, res) => {
