@@ -6,6 +6,7 @@ import express from 'express';
 import { createApp } from './app.js';
 import { createSaveStore } from './save-store.js';
 import { createChatAdapter, createCombinedChatAdapter } from './ai-adapter.js';
+import { createCreatorStore } from './creator/auth-store.js';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const dataDir = path.join(projectRoot, 'data');
@@ -19,6 +20,7 @@ const numberEnv = (name: string, fallback: number, min: number, max: number, int
   return value;
 };
 const store = createSaveStore(path.join(dataDir, 'game.sqlite'));
+const creatorStore = createCreatorStore(path.join(dataDir, 'game.sqlite'));
 const utilityTemperature = numberEnv('AI_TEMPERATURE_UTILITY', 0.2, 0, 2);
 const chatMode = process.env.AI_CHAT_MODE || 'settled';
 if (!['combined', 'settled'].includes(chatMode)) throw new Error('AI_CHAT_MODE 必须为 combined 或 settled');
@@ -30,7 +32,7 @@ const adapter = (chatMode === 'combined' ? createCombinedChatAdapter : createCha
   temperatures: { generate: numberEnv('AI_TEMPERATURE_GENERATE', 0.7, 0, 2),
     classify: utilityTemperature, rewrite: utilityTemperature, summarize: utilityTemperature },
 });
-const app = createApp(store, adapter, { debugEnabled: process.env.NODE_ENV !== 'production' && process.env.GAME_DEV_DEBUG === '1' });
+const app = createApp(store, adapter, { debugEnabled: process.env.NODE_ENV !== 'production' && process.env.GAME_DEV_DEBUG === '1', creatorStore });
 if (process.env.NODE_ENV === 'production') app.use(express.static(path.join(projectRoot, 'dist/web')));
 const port = Number(process.env.PORT || 3001);
 const host = process.env.GAME_API_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');

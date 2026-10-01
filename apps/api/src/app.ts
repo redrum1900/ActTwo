@@ -9,6 +9,8 @@ import { advanceTime, canEnterLocation, createInitialState, discoverPresentNpcs,
 import { appendActivity, settleWorld, type ActivityAction } from '@game/engine/activity-log';
 import { listScripts, loadScript } from '@game/script';
 import { createMemoryWorker } from './memory-worker.js';
+import { createCreatorRouter } from './creator/auth-router.js';
+import type { CreatorStore } from './creator/auth-store.js';
 
 function readPlayer(fields: readonly FieldDefinition[], input: unknown): GameState['player'] {
   const values = (input && typeof input === 'object' && !Array.isArray(input)) ? input as Record<string, unknown> : {};
@@ -38,11 +40,12 @@ function visiblePayload(script: GameScript, state: GameState, revision: number, 
   return { view, revision, hints, aiMode: adapter.mode };
 }
 
-export function createApp(store: SaveStore, adapter: ChatAdapter, options: { debugEnabled?: boolean } = {}) {
+export function createApp(store: SaveStore, adapter: ChatAdapter, options: { debugEnabled?: boolean; creatorStore?: CreatorStore } = {}) {
   const app = express();
   const queueMemory = createMemoryWorker(store, adapter);
   const inFlightTurns = new Map<string, { npcId: string; text: string; task: Promise<{ game: GameScript; save: NonNullable<ReturnType<SaveStore['getAuto']>>; result: Awaited<ReturnType<typeof runChat>> }> }>();
   app.use(express.json({ limit: '2mb' }));
+  if (options.creatorStore) app.use('/api/creator', createCreatorRouter(options.creatorStore));
   app.use('/api', (req, res, next) => {
     const cookie = req.headers.cookie?.match(/(?:^|;\s*)gd_guest=([a-f0-9-]{36})(?:;|$)/)?.[1];
     const owner = cookie ?? randomUUID();
