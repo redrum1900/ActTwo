@@ -18,8 +18,8 @@ export default function SectionEditor({ path, content, onChange }: Props) {
         <option value="true">是 / true</option><option value="false">否 / false</option></select>
         : primitive(current) ? <input value={String(current)} onChange={event => commit({ ...value,
           [key]: typeof current === 'number' ? (Number(event.target.value) || 0) : event.target.value })} />
-          : <textarea rows={Math.min(8, Math.max(3, stringify(current).split('\n').length))} value={stringify(current)}
-            onChange={event => { try { commit({ ...value, [key]: JSON.parse(event.target.value) }); } catch { /* Use JSON tab for incomplete nested values. */ } }} />}
+          : <><textarea rows={Math.min(8, Math.max(3, stringify(current).split('\n').length))} value={stringify(current)} readOnly
+            aria-label={`${key} 复杂结构预览`} /><button className="creator-small" type="button" onClick={() => setMode('json')}>在 JSON 模式编辑此结构 ↗</button></>}
     </label>)}<button className="creator-add-field" type="button" onClick={() => {
       const key = prompt('新字段名称（请按剧本配置规范填写）');
       if (key?.trim() && !(key.trim() in value)) commit({ ...value, [key.trim()]: '' });
