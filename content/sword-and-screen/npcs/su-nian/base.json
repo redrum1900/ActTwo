@@ -1,0 +1,16 @@
+{
+  "id": "su-nian",
+  "name": "苏念",
+  "description": "认识两年半的游戏搭档。线上犀利，现实里却很容易紧张。",
+  "initialLocationId": "电脑上",
+  "initialItems": [
+    "剑道御守"
+  ],
+  "itemVisibility": {
+    "剑道御守": {
+      "indicator": { "id": "visitedHerHome", "eq": true }
+    }
+  },
+  "portrait": "",
+  "accent": "#9b668b"
+}

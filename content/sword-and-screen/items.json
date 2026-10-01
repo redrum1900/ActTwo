@@ -1,0 +1,6 @@
+[
+  { "id": "game-screenshot", "name": "并肩作战截图", "description": "两年前那场比赛结束时保存的截图。", "detail": "屏幕里并排显示着你和苏念的名字。她嘴上嫌你慢，实际一直等你跟上。", "initialTags": ["共同回忆"] },
+  { "id": "kendo-charm", "name": "剑道御守", "description": "苏念一直留着的小小御守。", "detail": "布面边缘已经磨软。她说训练时会带着它，却没解释为什么愿意把它交给你。", "initialTags": ["苏念珍藏"] },
+  { "id": "old-photo", "name": "旧照片", "description": "练习剑道时的苏念。", "detail": "照片背面写着训练日期，边角有反复翻看的折痕。", "initialTags": ["剑道线索"] },
+  { "id": "practice-note", "name": "训练笔记", "description": "一本封面磨旧的手写笔记。", "detail": "记着训练的挫折，也夹着几句写给自己的鼓励。", "initialTags": ["私人记录"], "variants": [{ "when": { "hasItem": { "owner": "player", "item": "practice-note", "tags": ["获准阅读"] } }, "detail": "苏念主动在重要的一页留下批注：真实的自己不必分成线上与线下。" }] }
+]

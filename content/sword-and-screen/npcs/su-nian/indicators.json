@@ -1,0 +1,6 @@
+[
+  { "id": "affection", "name": "熟悉度", "type": "number", "initial": 0, "min": 0, "max": 100, "playerVisible": true },
+  { "id": "metInPerson", "name": "已经见面", "type": "boolean", "initial": false, "playerVisible": false, "writeOnceTrue": true },
+  { "id": "visitedHerHome", "name": "到过苏念家", "type": "boolean", "initial": false, "playerVisible": false, "writeOnceTrue": true },
+  { "id": "relationshipTags", "name": "关系记忆", "type": "tags", "initial": [], "playerVisible": false }
+]

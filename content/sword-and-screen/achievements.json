@@ -1,0 +1,5 @@
+[
+  { "id": "first-meeting", "name": "屏幕之外", "description": "第一次在饭店见到苏念。", "condition": { "indicator": { "npcId": "su-nian", "id": "metInPerson", "eq": true } } },
+  { "id": "kendo-secret", "name": "她的另一面", "description": "知道了苏念练剑道的秘密。", "condition": { "flag": "knows-kendo" } },
+  { "id": "home-invitation", "name": "走进她的生活", "description": "苏念邀请你到家里继续聊。", "condition": { "tag": "苏念邀请到家中" } }
+]
