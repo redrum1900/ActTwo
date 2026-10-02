@@ -3,13 +3,15 @@ import { creatorApi, type Account, type Project, type ProjectSummary, type Repor
 import { groupedSections, labelOf } from './sections.js';
 import SectionEditor from './SectionEditor.js';
 import ReviewWorkspace from './ReviewWorkspace.js';
-import { homeForRole, reviewStatusLabel } from './review-ui.js';
+import { CreatorNavigation } from './CreatorNavigation.js';
+import { workspaceForPath, reviewStatusLabel, type CreatorWorkspace } from './review-ui.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
 
 export default function CreatorApp() {
   const [account, setAccount] = useState<Account | null>(null);
+  const [workspace, setWorkspace] = useState<CreatorWorkspace>('library');
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [project, setProject] = useState<Project | null>(null);
@@ -34,8 +36,13 @@ export default function CreatorApp() {
   const revision = useRef(1);
 
   const refreshList = async () => { const data = await creatorApi.list(); setProjects(data.projects); };
-  useEffect(() => { void creatorApi.me().then(async user => { setAccount(user); if (user.role === 'admin') window.history.replaceState({}, '', '/creator/review');
-    else await refreshList(); })
+  useEffect(() => { void creatorApi.me().then(async user => { setAccount(user);
+    const next = workspaceForPath(user.role, window.location.pathname); setWorkspace(next);
+    if (next === 'library') {
+      if (window.location.pathname === '/creator/review') window.history.replaceState({}, '', '/creator');
+      await refreshList();
+    }
+  })
     .catch(() => {}).finally(() => setLoading(false)); }, []);
 
   const openProject = (next: Project) => {
@@ -49,10 +56,10 @@ export default function CreatorApp() {
     window.history.replaceState({}, '', `/creator/${encodeURIComponent(next.id)}`);
   };
   useEffect(() => {
-    if (!account || account.role === 'admin' || project) return;
+    if (!account || workspace === 'review' || project) return;
     const id = decodeURIComponent(window.location.pathname.split('/')[2] ?? '');
     if (id) void creatorApi.get(id).then(openProject).catch(error => setMessage(errorText(error)));
-  }, [account]);
+  }, [account, workspace]);
 
   const updateDraft = (value: string) => { draftRef.current = value; setDraft(value); setSaveState('dirty'); setReport(null); };
   const save = async (): Promise<boolean> => {
@@ -96,15 +103,27 @@ export default function CreatorApp() {
   };
   const runAfterSave = async (action: () => Promise<void>) => { if (await save()) try { setMessage(''); await action(); }
     catch (error) { setMessage(errorText(error)); } };
-  const leaveProject = () => void runAfterSave(async () => {
+  const goLibrary = () => void runAfterSave(async () => {
     setProject(null); projectRef.current = null; setReport(null);
+    setWorkspace('library');
     window.history.replaceState({}, '', '/creator'); await refreshList();
   });
+  const goReview = () => {
+    if (account?.role !== 'admin') return;
+    void runAfterSave(async () => {
+      setProject(null); projectRef.current = null; setReport(null); setMessage('');
+      setWorkspace('review'); window.history.replaceState({}, '', '/creator/review');
+    });
+  };
   const authenticate = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage('');
     try { const user = authMode === 'login' ? await creatorApi.login(username, password) : await creatorApi.register(username, password);
-      setAccount(user); setPassword(''); if (user.role === 'admin') window.history.replaceState({}, '', '/creator/review');
-      else await refreshList(); }
+      setAccount(user); setPassword('');
+      const next = workspaceForPath(user.role, window.location.pathname); setWorkspace(next);
+      if (next === 'library') {
+        if (window.location.pathname === '/creator/review') window.history.replaceState({}, '', '/creator');
+        await refreshList();
+      } }
     catch (error) { setMessage(errorText(error)); }
   };
   const create = async (event: React.FormEvent) => {
@@ -142,9 +161,10 @@ export default function CreatorApp() {
   if (loading) return <div className="creator-loading">正在打开创作中心…</div>;
   return <div className="creator-app">
     <header className="creator-header"><a className="creator-brand" href="/">叙事档案 <span>／ 创作中心</span></a>
+      {account && <CreatorNavigation role={account.role} workspace={workspace} onLibrary={goLibrary} onReview={goReview} />}
       <div className="creator-header-right"><a href="/">玩家入口 ↗</a>{account && <><span>{account.username}{account.role === 'admin' ? ' · 管理员' : ''}</span><button onClick={() => void runAfterSave(async () => {
         await creatorApi.logout(); setAccount(null); setProject(null); projectRef.current = null;
-        window.history.replaceState({}, '', '/creator'); })}>退出</button></>}</div></header>
+        setWorkspace('library'); window.history.replaceState({}, '', '/creator'); })}>退出</button></>}</div></header>
     {!account ? <main className="creator-auth"><div className="creator-auth-copy"><div className="creator-kicker">WRITE YOUR OWN WORLD</div>
       <h1>让故事，<br /><em>从这里开始。</em></h1><p>创建角色、地点和规则，随时保存草稿。完成校验后提交审核，通过后故事会出现在玩家目录。</p>
       <div className="creator-auth-lines"><span>01 / 定义世界</span><span>02 / 塑造角色</span><span>03 / 提交审核</span></div></div>
@@ -155,7 +175,7 @@ export default function CreatorApp() {
         <button className="creator-primary" type="submit">{authMode === 'login' ? '登录创作中心' : '注册并开始创作'} <span>↗</span></button>
         <button className="creator-text-button" type="button" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setMessage(''); }}>
           {authMode === 'login' ? '没有账号？注册一个' : '已有账号？返回登录'}</button>{message && <p className="creator-error" role="alert">{message}</p>}</form></main>
-      : homeForRole(account.role) === 'review' ? <ReviewWorkspace />
+      : account.role === 'admin' && workspace === 'review' ? <ReviewWorkspace />
       : !project ? <main className="creator-library"><div className="creator-kicker">YOUR WORKSPACE / {account.username}</div>
         <div className="creator-library-title"><div><h1>我的故事</h1><p>每个故事由你独立管理。草稿保存后不会影响已经发布的版本。</p></div>
           <button className="creator-primary" onClick={() => { setShowCreate(true); void creatorApi.templates().then(data => setTemplates(data.templates)); }}>＋ 新建故事</button></div>
@@ -174,7 +194,7 @@ export default function CreatorApp() {
             {templates.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
           <div className="creator-modal-actions"><button type="button" onClick={() => setShowCreate(false)}>取消</button><button className="creator-primary" type="submit">创建故事 ↗</button></div>
           {message && <p className="creator-error" role="alert">{message}</p>}</form></div>}</main>
-        : <div className="creator-workspace"><aside className="creator-sidebar"><button className="creator-back" onClick={leaveProject}>← 我的故事</button>
+        : <div className="creator-workspace"><aside className="creator-sidebar"><button className="creator-back" onClick={goLibrary}>← 我的故事</button>
           <div className="creator-story-heading"><div className="creator-kicker">STORY / {project.id}</div><h1>{project.title}</h1><span>{reviewStatusLabel(project)} · 草稿可继续编辑</span></div>
           <nav aria-label="配置项"><div className="creator-nav-title">剧本</div>{groups!.root.map(entry => <button key={entry} className={path === entry ? 'active' : ''} onClick={() => void switchPath(entry)}>{labelOf(entry).name}</button>)}
             <div className="creator-nav-title">玩家</div>{groups!.player.map(entry => <button key={entry} className={path === entry ? 'active' : ''} onClick={() => void switchPath(entry)}>{labelOf(entry).name}</button>)}

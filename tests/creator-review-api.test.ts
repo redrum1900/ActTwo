@@ -38,6 +38,13 @@ test('only admin approves submitted snapshot; old release survives pending and r
     assert.equal((await call(`/creator/reviews/${first.data.id}/approve`, 'POST', {}, authorCookie)).status, 403);
     const admin = await call('/creator/login', 'POST', { username: 'superadmin', password: 'admin-password-1' });
     const adminCookie = admin.cookie;
+    const adminStory = await call('/creator/projects', 'POST', { id: 'admin-story', title: '管理员的故事' }, adminCookie);
+    assert.equal(adminStory.status, 201);
+    const ownSubmission = await call('/creator/projects/admin-story/submit', 'POST', {}, adminCookie);
+    assert.equal(ownSubmission.status, 201);
+    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === 'admin-story'), false);
+    assert.equal((await call(`/creator/reviews/${ownSubmission.data.id}/approve`, 'POST', {}, adminCookie)).status, 200);
+    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === 'admin-story'), true);
     assert.equal((await call('/creator/reviews', 'GET', undefined, adminCookie)).data.reviews[0].id, first.data.id);
     assert.equal((await call(`/creator/reviews/${first.data.id}`, 'GET', undefined, adminCookie)).data.script.title, '线上初版');
     assert.equal((await call(`/creator/reviews/${first.data.id}/approve`, 'POST', {}, adminCookie)).status, 200);
