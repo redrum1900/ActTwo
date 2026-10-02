@@ -5,8 +5,9 @@ import type { CreatorStore } from './auth-store.js';
 import { creatorAccount } from './auth-router.js';
 import { ProjectError, type ProjectStore } from './project-store.js';
 import type { ReviewStore } from './review-store.js';
+import type { CoverAssets } from './cover-assets.js';
 
-export function createProjectRouter(accounts: CreatorStore, projects: ProjectStore, reviews: ReviewStore) {
+export function createProjectRouter(accounts: CreatorStore, projects: ProjectStore, reviews: ReviewStore, covers: CoverAssets) {
   const router = express.Router();
   router.use((req, res, next) => {
     const account = creatorAccount(req, accounts);
@@ -44,6 +45,24 @@ export function createProjectRouter(accounts: CreatorStore, projects: ProjectSto
     if (typeof path !== 'string' || typeof content !== 'string' || !Number.isSafeInteger(revision) || revision < 1)
       throw new ProjectError('配置项保存参数无效');
     return projects.putSection(owner(req), req.params.id as string, path, content, revision);
+  }));
+  router.post('/projects/:id/cover', express.raw({ type: () => true, limit: '5mb' }), (req, res) => {
+    try {
+      const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      return res.status(201).json(covers.upload(owner(req), req.params.id as string, bytes, req.headers['content-type']?.split(';')[0] ?? ''));
+    } catch (error) { return res.status(error instanceof ProjectError ? error.status : 500)
+      .json({ error: error instanceof Error ? error.message : '封面上传失败' }); }
+  });
+  router.get('/projects/:id/covers/:assetId', (req, res) => {
+    try {
+      const image = covers.draft(owner(req), req.params.id as string, req.params.assetId as string);
+      res.type(image.mime).set('Cache-Control', 'private, no-store').send(image.bytes);
+    } catch (error) { res.status(error instanceof ProjectError ? error.status : 500)
+      .json({ error: error instanceof Error ? error.message : '封面读取失败' }); }
+  });
+  router.delete('/projects/:id/covers/:assetId', handle(req => {
+    covers.discard(owner(req), req.params.id as string, req.params.assetId as string);
+    return { ok: true };
   }));
   router.post('/projects/:id/npcs', handle(req => {
     const { id, name } = req.body ?? {};

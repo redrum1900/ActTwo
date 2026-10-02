@@ -6,6 +6,7 @@ import ReviewWorkspace from './ReviewWorkspace.js';
 import { CreatorNavigation } from './CreatorNavigation.js';
 import { workspaceForPath, reviewStatusLabel, type CreatorWorkspace } from './review-ui.js';
 import { hasUnsavedChanges, resolveDirtyChoice } from './editor-session.js';
+import { saveWithCover } from './cover-save.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
@@ -18,6 +19,7 @@ export default function CreatorApp() {
   const [project, setProject] = useState<Project | null>(null);
   const [path, setPath] = useState('manifest.json');
   const [draft, setDraft] = useState('');
+  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [saveState, setSaveState] = useState<'saved' | 'dirty' | 'saving' | 'conflict' | 'error'>('saved');
   const [message, setMessage] = useState('');
   const [report, setReport] = useState<Report | null>(null);
@@ -29,6 +31,7 @@ export default function CreatorApp() {
   const [templates, setTemplates] = useState<{ id: string; title: string }[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const draftRef = useRef(draft);
+  const coverFileRef = useRef<File | null>(null);
   const projectRef = useRef(project);
   const pathRef = useRef(path);
   const savePromise = useRef<Promise<boolean> | null>(null);
@@ -54,6 +57,7 @@ export default function CreatorApp() {
     savedContent.current = next.sections[first]?.content ?? '';
     revision.current = next.sections[first]?.revision ?? 1;
     draftRef.current = savedContent.current; setDraft(savedContent.current);
+    coverFileRef.current = null; setCoverFile(null);
     setSaveState('saved'); setReport(null); setMessage('');
     window.history.replaceState({}, '', `/creator/${encodeURIComponent(next.id)}`);
   };
@@ -64,30 +68,48 @@ export default function CreatorApp() {
   }, [account, workspace]);
 
   const updateDraft = (value: string) => { draftRef.current = value; setDraft(value); setSaveState('dirty'); setReport(null); };
+  const updateCoverFile = (file: File | null) => {
+    coverFileRef.current = file; setCoverFile(file);
+    setSaveState(file || hasUnsavedChanges(draftRef.current, savedContent.current) ? 'dirty' : 'saved');
+    setReport(null);
+  };
+  const isDirty = () => hasUnsavedChanges(draftRef.current, savedContent.current) || !!coverFileRef.current;
   const resetDraft = () => {
-    if (!hasUnsavedChanges(draftRef.current, savedContent.current)) return;
+    if (!isDirty()) return;
     if (!window.confirm('放弃当前配置中未保存的修改？')) return;
     discardDraft();
   };
   const discardDraft = () => {
     draftRef.current = savedContent.current; setDraft(savedContent.current);
+    coverFileRef.current = null; setCoverFile(null);
     setSaveState('saved'); setMessage(''); setReport(null);
   };
   const save = async (): Promise<boolean> => {
     if (savePromise.current) { const previous = await savePromise.current; if (!previous) return false; }
     const active = projectRef.current;
-    if (!active || draftRef.current === savedContent.current) { setSaveState('saved'); return true; }
+    if (!active || !isDirty()) { setSaveState('saved'); return true; }
     const savingPath = pathRef.current;
     const content = draftRef.current;
+    const file = savingPath === 'manifest.json' ? coverFileRef.current : null;
     const task = (async () => {
       setSaveState('saving');
       try {
-        const section = await creatorApi.save(active.id, savingPath, content, revision.current);
+        const result = file ? await saveWithCover(content, file,
+          selected => creatorApi.uploadCover(active.id, selected),
+          nextContent => creatorApi.save(active.id, savingPath, nextContent, revision.current),
+          cover => creatorApi.discardCover(active.id, cover).then(() => {}))
+          : { section: await creatorApi.save(active.id, savingPath, content, revision.current), content };
+        const { section } = result;
         revision.current = section.revision;
         savedContent.current = section.content;
+        if (file) {
+          if (draftRef.current === content) { draftRef.current = result.content; setDraft(result.content); }
+          else { draftRef.current = JSON.stringify({ ...JSON.parse(draftRef.current), cover: JSON.parse(result.content).cover }, null, 2); setDraft(draftRef.current); }
+          coverFileRef.current = null; setCoverFile(null);
+        }
         const next = { ...projectRef.current!, sections: { ...projectRef.current!.sections, [savingPath]: section } };
         projectRef.current = next; setProject(next);
-        setSaveState(draftRef.current === content ? 'saved' : 'dirty');
+        setSaveState(isDirty() ? 'dirty' : 'saved');
         return true;
       } catch (error) {
         setSaveState(errorText(error).includes('冲突') ? 'conflict' : 'error');
@@ -100,7 +122,7 @@ export default function CreatorApp() {
   };
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!hasUnsavedChanges(draftRef.current, savedContent.current)) return;
+      if (!isDirty()) return;
       event.preventDefault(); event.returnValue = '';
     };
     window.addEventListener('beforeunload', beforeUnload);
@@ -113,7 +135,7 @@ export default function CreatorApp() {
     setShowDirtyChoice(false); dirtyChoiceResolver.current?.(choice); dirtyChoiceResolver.current = null;
   };
   const runWithDraftGuard = async (action: () => Promise<void>) => {
-    if (hasUnsavedChanges(draftRef.current, savedContent.current)) {
+    if (isDirty()) {
       const choice = await askDirtyChoice();
       if (!(await resolveDirtyChoice(choice, save))) return;
       if (choice === 'discard') discardDraft();
@@ -128,6 +150,7 @@ export default function CreatorApp() {
       setPath(nextPath); pathRef.current = nextPath;
       savedContent.current = section.content; revision.current = section.revision;
       draftRef.current = section.content; setDraft(section.content);
+      coverFileRef.current = null; setCoverFile(null);
       setSaveState('saved'); setMessage('');
     });
   };
@@ -246,10 +269,11 @@ export default function CreatorApp() {
             {report && <div className="creator-report"><strong>{report.errors.length ? `校验发现 ${report.errors.length} 个错误` : '校验通过，可以提交审核'}</strong>
               {[...report.errors, ...report.warnings].map((issue, index) => <button key={index} onClick={() => { const target = Object.keys(project.sections).find(entry => issue.path.startsWith(entry)); if (target) void switchPath(target); }}>
                 <code>{issue.path}</code> {issue.message}</button>)}</div>}
-            <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} savedLocations={savedLocations} />
+            <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} savedLocations={savedLocations}
+              projectId={project.id} coverFile={coverFile} onCoverFileChange={updateCoverFile} />
             <div className="creator-save-actions"><span>{saveState === 'dirty' ? '修改尚未保存' : saveState === 'conflict' ? '其他窗口已修改，请处理冲突' : saveState === 'error' ? '保存失败，草稿仍在本页' : saveState === 'saving' ? '正在保存…' : '当前配置已保存'}</span>
-              <div><button type="button" disabled={saveState === 'saving' || !hasUnsavedChanges(draft, savedContent.current)} onClick={resetDraft}>重置</button>
-                <button className="creator-primary" type="button" disabled={saveState === 'saving' || !hasUnsavedChanges(draft, savedContent.current)} onClick={() => void save()}>保存</button></div></div>
+              <div><button type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile)} onClick={resetDraft}>重置</button>
+                <button className="creator-primary" type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile)} onClick={() => void save()}>保存</button></div></div>
             <div className="creator-bottom-actions"><button className="creator-danger-link" onClick={deleteProject}>删除这个故事</button>
               {project.publishedAt && <a href={`/`} target="_blank" rel="noreferrer">前往玩家目录 ↗</a>}</div></main></div>}
     {showDirtyChoice && <div className="creator-modal-backdrop" role="presentation"><div className="creator-modal" role="dialog" aria-modal="true" aria-labelledby="creator-unsaved-title">

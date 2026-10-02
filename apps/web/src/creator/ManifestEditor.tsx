@@ -1,19 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { changePeriod, movePeriod, patchManifest, removePeriod } from './section-forms.js';
 
 interface Props {
   content: string;
   onChange: (value: string) => void;
   savedLocations: { id: string; name: string }[];
+  projectId?: string;
+  coverFile?: File | null;
+  onCoverFileChange?: (file: File | null) => void;
 }
 
-export default function ManifestEditor({ content, onChange, savedLocations }: Props) {
+export default function ManifestEditor({ content, onChange, savedLocations, projectId, coverFile = null, onCoverFileChange }: Props) {
   const manifest = JSON.parse(content) as Record<string, unknown>;
   const periods = Array.isArray(manifest.periods) ? manifest.periods.map(String) : [];
   const selectedLocation = String(manifest.startLocation ?? '');
   const missingLocation = !!selectedLocation && !savedLocations.some(location => location.id === selectedLocation);
   const [periodModal, setPeriodModal] = useState<number | 'new' | null>(null);
   const [periodName, setPeriodName] = useState('');
+  const [coverPreview, setCoverPreview] = useState('');
+  const [coverError, setCoverError] = useState('');
+  const coverInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!coverFile) { setCoverPreview(''); return; }
+    const url = URL.createObjectURL(coverFile);
+    setCoverPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [coverFile]);
+  const savedCover = String(manifest.cover ?? '');
+  const savedImage = savedCover.startsWith('/api/covers/') && projectId
+    ? `/api/creator/projects/${encodeURIComponent(projectId)}/covers/${savedCover.split('/').at(-1)}` : '';
   const patch = (fields: Record<string, unknown>) => onChange(patchManifest(content, fields));
   const openPeriod = (index: number | 'new') => {
     setPeriodName(index === 'new' ? '' : periods[index]); setPeriodModal(index);
@@ -33,7 +48,25 @@ export default function ManifestEditor({ content, onChange, savedLocations }: Pr
         onChange={event => patch({ description: event.target.value })} placeholder="玩家在故事列表中看到的简介" /></label>
       <label className="creator-field creator-wide"><span>世界背景</span><textarea rows={6} value={String(manifest.world ?? '')}
         onChange={event => patch({ world: event.target.value })} placeholder="描述世界、时代与故事所处的环境" /></label>
-      <div className="creator-field creator-wide"><span>封面</span><div className="creator-cover-placeholder">封面图片上传将在下一步接入。现有封面内容会保留。</div></div>
+      <div className="creator-field creator-wide"><span>封面</span><div className="creator-cover-picker">
+        {(coverPreview || savedImage) ? <img src={coverPreview || savedImage} alt="封面预览" />
+          : <div className="creator-cover-empty">{savedCover || '暂无封面'}</div>}
+        <div><strong>{coverFile ? coverFile.name : '故事封面'}</strong><p>支持 PNG、JPEG、WebP，最大 5 MB。选择图片后，点击页面底部「保存」才会上传。</p>
+          <button type="button" onClick={() => coverInput.current?.click()}>选择图片</button>
+          {(coverFile || savedCover) && <button type="button" className="creator-cover-remove" onClick={() => {
+            if (coverFile) onCoverFileChange?.(null);
+            else patch({ cover: '' });
+          }}>{coverFile ? '取消选择' : '移除封面'}</button>}
+          {coverError && <small className="creator-field-warning" role="alert">{coverError}</small>}
+        </div>
+        <input ref={coverInput} type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="选择封面图片"
+          onChange={event => { const file = event.target.files?.[0]; if (!file) return;
+            if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+              setCoverError('请选择不超过 5 MB 的 PNG、JPEG 或 WebP 图片'); event.target.value = ''; return;
+            }
+            setCoverError(''); onCoverFileChange?.(file); event.target.value = '';
+          }} />
+      </div></div>
       <label className="creator-field creator-wide"><span>开局地点</span>
         <select value={selectedLocation} onChange={event => patch({ startLocation: event.target.value })}>
           {missingLocation && <option value={selectedLocation}>无效地点 · {selectedLocation}</option>}

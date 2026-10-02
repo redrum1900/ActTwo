@@ -4,11 +4,12 @@ import ManifestEditor from './ManifestEditor.js';
 import LocationsEditor from './LocationsEditor.js';
 
 interface Props { path: string; content: string; onChange: (value: string) => void;
-  savedLocations?: { id: string; name: string }[] }
+  savedLocations?: { id: string; name: string }[]; projectId?: string;
+  coverFile?: File | null; onCoverFileChange?: (file: File | null) => void }
 const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 const primitive = (value: unknown) => ['string', 'number', 'boolean'].includes(typeof value);
 
-export default function SectionEditor({ path, content, onChange, savedLocations = [] }: Props) {
+export default function SectionEditor({ path, content, onChange, savedLocations = [], projectId, coverFile, onCoverFileChange }: Props) {
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const parsed = useMemo(() => { try { return { value: JSON.parse(content) as unknown, error: '' }; }
     catch (error) { return { value: undefined, error: error instanceof Error ? error.message : 'JSON 格式错误' }; } }, [content]);
@@ -36,7 +37,8 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
     {mode === 'json' || parsed.error ? <textarea className="creator-json" spellCheck={false} aria-label={`${info.name} JSON`}
       value={content} onChange={event => onChange(event.target.value)} />
       : path === 'manifest.json' && value && typeof value === 'object' && !Array.isArray(value)
-        ? <ManifestEditor content={content} onChange={onChange} savedLocations={savedLocations} />
+        ? <ManifestEditor content={content} onChange={onChange} savedLocations={savedLocations} projectId={projectId}
+          coverFile={coverFile} onCoverFileChange={onCoverFileChange} />
       : path === 'locations.json' && Array.isArray(value)
         ? <LocationsEditor content={content} onChange={onChange} />
       : Array.isArray(value) ? <div className="creator-entries">

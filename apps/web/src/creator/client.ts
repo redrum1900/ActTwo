@@ -23,6 +23,15 @@ export const creatorApi = {
   create: (title: string, templateId?: string) => api<Project>(`${base}/projects`, { method: 'POST', body: JSON.stringify({ title, templateId }) }),
   save: (id: string, path: string, content: string, revision: number) => api<Section>(`${base}/projects/${encodeURIComponent(id)}/sections`,
     { method: 'PUT', body: JSON.stringify({ path, content, revision }) }),
+  uploadCover: async (id: string, file: File): Promise<{ cover: string }> => {
+    const response = await fetch(`/api${base}/projects/${encodeURIComponent(id)}/cover`, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': file.type }, body: file });
+    const data = await response.json() as { cover?: string; error?: string };
+    if (!response.ok || !data.cover) throw new Error(data.error ?? `封面上传失败 (${response.status})`);
+    return { cover: data.cover };
+  },
+  discardCover: (id: string, cover: string) => api<{ ok: boolean }>(`${base}/projects/${encodeURIComponent(id)}/covers/${encodeURIComponent(cover.split('/').at(-1) ?? '')}`,
+    { method: 'DELETE' }),
   addNpc: (id: string, npcId: string, name: string) => api<Project>(`${base}/projects/${encodeURIComponent(id)}/npcs`,
     { method: 'POST', body: JSON.stringify({ id: npcId, name }) }),
   removeNpc: (id: string, npcId: string) => api<Project>(`${base}/projects/${encodeURIComponent(id)}/npcs/${encodeURIComponent(npcId)}`, { method: 'DELETE' }),

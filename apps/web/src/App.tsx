@@ -3,6 +3,7 @@ import type { FieldDefinition } from '@game/contracts';
 import { api, post, postChatStream, type CatalogGame, type GameDetail, type SessionPayload, type SlotSummary } from './api.js';
 import { appendPendingDraft, beginPendingTurn, failPendingTurn, npcLeftCurrentLocation, type PendingTurn } from './chat-stream.js';
 import { npcChannelLabel } from './npc-channel.js';
+import CoverArtwork from './cover-artwork.js';
 
 type Screen = 'catalog' | 'menu' | 'new' | 'saves' | 'game';
 type Pane = 'home' | 'location' | 'chat';
@@ -174,7 +175,7 @@ export default function App() {
       <section className="catalog-hero"><div className="eyebrow">THE STORY LIBRARY / 故事目录</div><h1>走进故事，<br /><em>留下你的版本。</em></h1><p>在不同的世界中认识角色，与他们对话。每个选择和发现，都会写入属于你的档案。</p></section>
       <div className="section-head"><span>可进入的故事</span><span>{catalog.length.toString().padStart(2, '0')} 部</span></div>
       <div className="catalog-grid">{catalog.map((entry, index) => <button className="game-card" key={entry.id} onClick={() => openGame(entry.id)}>
-        <div className="game-card-art"><span className="cover-index">STORY / {String(index + 1).padStart(2, '0')}</span><div className="cover-symbol">{entry.cover ?? initials(entry.title)}</div><span className="cover-bottom">STORY ARCHIVE<br />{entry.version}</span></div>
+        <div className="game-card-art"><span className="cover-index">STORY / {String(index + 1).padStart(2, '0')}</span><div className="cover-symbol"><CoverArtwork cover={entry.cover} fallback={initials(entry.title)} /></div><span className="cover-bottom">STORY ARCHIVE<br />{entry.version}</span></div>
         <div className="game-card-info"><div className="card-topline"><span>互动叙事 · AI 角色对话</span><span>{entry.hasAuto ? '可继续' : '未开始'}</span></div><h2>{entry.title}</h2><p>{entry.subtitle}</p><div className="card-foot">进入故事 <span>↗</span></div></div>
       </button>)}</div>
       <footer className="site-footer">STORY ARCHIVE © 2026 <span>每一段对话，都可能改变故事。</span></footer>
@@ -182,7 +183,7 @@ export default function App() {
 
     {screen === 'menu' && game && <main className="menu-screen page-enter">
       <header className="subpage-header"><button className="back-link" onClick={returnCatalog}>← 返回故事目录</button></header>
-      <div className="menu-layout"><div className="menu-art"><div className="menu-art-top">STORY ARCHIVE <span>{game.version}</span></div><div className="menu-art-character">{game.cover ?? initials(game.title)}</div><div className="menu-art-bottom">{game.title}<span>{game.subtitle}</span></div></div>
+      <div className="menu-layout"><div className="menu-art"><div className="menu-art-top">STORY ARCHIVE <span>{game.version}</span></div><div className="menu-art-character"><CoverArtwork cover={game.cover} fallback={initials(game.title)} /></div><div className="menu-art-bottom">{game.title}<span>{game.subtitle}</span></div></div>
         <div className="menu-copy"><div className="eyebrow">INTERACTIVE STORY / {game.version}</div><h1>{game.title}</h1><p className="menu-subtitle">{game.subtitle}</p><div className="menu-rule" /><p className="menu-description">{game.description}</p>
           <div className="menu-actions"><button className="button button-primary" disabled={!game.hasAuto || busy} onClick={continueGame}>继续游戏 <span>↗</span></button>
             <button className="button button-outline" onClick={() => setScreen('new')}>新游戏 <span>＋</span></button>
