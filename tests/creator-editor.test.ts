@@ -39,6 +39,21 @@ test('rule forms show saved story event labels in selection controls', () => {
   assert.match(html, /成功后记录剧情事件/);
 });
 
+test('items and gallery use compact tabs without editable IDs or add-field controls', () => {
+  const item = renderToStaticMarkup(createElement(SectionEditor, { path: 'items.json', onChange: () => {},
+    content: JSON.stringify([{ id: 'item-a', name: '照片', description: '简介', detail: '第一行\n第二行', initialTags: ['回忆'] }]) }));
+  assert.match(item, /道具列表/);
+  assert.match(item, /新增道具/);
+  assert.match(item, /完整详情/);
+  assert.match(item, /回忆/);
+  assert.doesNotMatch(item, /唯一 ID|添加字段/);
+  const ending = renderToStaticMarkup(createElement(SectionEditor, { path: 'endings.json', onChange: () => {},
+    content: JSON.stringify([{ id: 'end-a', name: '归来', description: '第一行\n第二行', condition: { flag: 'seen' }, hidden: true }]) }));
+  assert.match(ending, /结局列表/);
+  assert.match(ending, /隐藏条目/);
+  assert.doesNotMatch(ending, /唯一 ID|添加字段/);
+});
+
 test('creator status distinguishes pending revisions from a live release', () => {
   assert.equal(reviewStatusLabel({ publishedAt: null, review: null }), '草稿');
   assert.equal(reviewStatusLabel({ publishedAt: null, review: { status: 'pending' } }), '待审核');

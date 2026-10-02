@@ -21,6 +21,35 @@ export function removeStoryEvent(content: string, id: string): string {
   return format({ ...current, storyEvents: events.filter(event => event.id !== id) });
 }
 
+export function newEntryId(): string { return crypto.randomUUID(); }
+
+export function patchEntryById(content: string, id: string, patch: Record<string, unknown>): string {
+  const entries = JSON.parse(content) as Record<string, unknown>[];
+  return format(entries.map(entry => entry.id === id ? { ...entry, ...patch, id } : entry));
+}
+
+export function addEntry(content: string, entry: Record<string, unknown>): string {
+  return format([...(JSON.parse(content) as unknown[]), entry]);
+}
+
+export function removeEntry(content: string, id: string): string {
+  return format((JSON.parse(content) as { id: string }[]).filter(entry => entry.id !== id));
+}
+
+export function addEntryTag(content: string, id: string, tag: string): string {
+  const entries = JSON.parse(content) as { id: string; initialTags?: string[] }[];
+  const current = entries.find(entry => entry.id === id);
+  if (!current || !tag.trim()) return content;
+  return patchEntryById(content, id, { initialTags: [...new Set([...(current.initialTags ?? []), tag.trim()])] });
+}
+
+export function removeEntryTag(content: string, id: string, tag: string): string {
+  const entries = JSON.parse(content) as { id: string; initialTags?: string[] }[];
+  const current = entries.find(entry => entry.id === id);
+  if (!current) return content;
+  return patchEntryById(content, id, { initialTags: (current.initialTags ?? []).filter(value => value !== tag) });
+}
+
 export function patchLocation(content: string, id: string, patch: Record<string, unknown>): string {
   const locations = JSON.parse(content) as Record<string, unknown>[];
   return format(locations.map(location => location.id === id ? { ...location, ...patch } : location));

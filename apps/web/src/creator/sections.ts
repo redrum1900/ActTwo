@@ -1,9 +1,9 @@
 export const sectionLabels: Record<string, { name: string; help: string }> = {
   'manifest.json': { name: '故事设定', help: '标题、简介、世界背景、初始地点和时间段。故事 ID 发布后请保持不变。' },
   'player-form.json': { name: '开局资料', help: '玩家开始游戏前填写的问题。每项有 id、label、type 和默认值。' },
-  'items.json': { name: '道具', help: '定义道具名称与描述；获得和移除由规则结算。' },
+  'items.json': { name: '道具', help: '一项一个标签页；名称、描述、详情与初始标签。获得和移除由规则结算。' },
   'locations.json': { name: '地点', help: '地点及玩家进入条件；NPC 当前所在地由角色快照记录。' },
-  'endings.json': { name: '结局', help: '结局的 ID、名称和触发条件。' },
+  'endings.json': { name: '结局', help: '定义结局名称、描述及触发条件；ID 自动生成。' },
   'achievements.json': { name: '成就', help: '玩家可解锁的成就。' },
   'stats.json': { name: '属性定义', help: '跨角色的基础属性配置。' },
   'player/indicators.json': { name: '玩家指标', help: '玩家自身状态；visible 控制是否给玩家看。' },

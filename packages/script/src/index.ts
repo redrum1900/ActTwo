@@ -304,7 +304,10 @@ export function validateScript(script: GameScript): string[] {
     if (!['semantic', 'automatic', 'action'].includes(event.trigger)) errors.push(`事件 ${event.id} 触发方式无效`);
     event.effects.forEach((effect) => checkEffect(effect, `事件 ${event.id}`, event.npc));
   }
-  for (const entry of [...script.endings, ...script.achievements]) checkCondition(entry.condition, `图鉴 ${entry.id}`);
+  for (const entry of [...script.endings, ...script.achievements]) {
+    if (!entry.condition) errors.push(`图鉴 ${entry.id} 缺少触发条件`);
+    else checkCondition(entry.condition, `图鉴 ${entry.id}`);
+  }
   for (const item of script.items) for (const variant of item.variants ?? []) checkCondition(variant.when, `道具 ${item.id} 变体`);
   if (script.guide) {
     unique('引导步骤', script.guide.steps.map((step) => step.id));

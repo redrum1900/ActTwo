@@ -29,6 +29,12 @@ test('story event definitions and references are validated before publishing', (
   assert.match(validateScript(script).join('；'), /事件.*未知剧情事件 missing-event/);
 });
 
+test('new gallery entries without a condition cannot pass publication validation', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.endings = [...script.endings, { id: 'new-ending', name: '新结局', description: '', condition: undefined as never }];
+  assert.match(validateScript(script).join('；'), /图鉴 new-ending 缺少触发条件/);
+});
+
 test('validation rejects references to items that do not exist', () => {
   const script = loadScript('sword-and-screen');
   const broken = { ...structuredClone(script), npcs: script.npcs.map((npc, index) =>

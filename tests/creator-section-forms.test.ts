@@ -7,6 +7,34 @@ import { patchManifest, patchLocation, newLocationId, changePeriod, movePeriod, 
   newStoryEvent, patchStoryEvent, removeStoryEvent } from '../apps/web/src/creator/section-forms.js';
 import { setStoryEventGate, setRecordedStoryEvents } from '../apps/web/src/creator/story-event-rule.js';
 import { referencedStoryEventIds } from '../apps/web/src/creator/story-event-references.js';
+import { newEntryId, patchEntryById, addEntry, removeEntry, addEntryTag, removeEntryTag } from '../apps/web/src/creator/section-forms.js';
+
+test('tabbed entries patch by stable ID and preserve unknown fields across deletion', () => {
+  const first = { id: 'a', name: '第一项', description: '第一行\n第二行', variants: [{ when: { flag: 'old' } }] };
+  const second = { id: 'b', name: '第二项', hiddenTags: ['secret'] };
+  const original = JSON.stringify([first, second]);
+  const changed = JSON.parse(patchEntryById(original, 'a', { detail: '完整\n详情' }));
+  assert.equal(changed[0].description, first.description);
+  assert.equal(changed[0].detail, '完整\n详情');
+  assert.deepEqual(changed[0].variants, first.variants);
+  assert.deepEqual(changed[1], second);
+  assert.deepEqual(JSON.parse(removeEntry(JSON.stringify(changed), 'a')), [second]);
+  const id = newEntryId();
+  assert.notEqual(id, newEntryId());
+  assert.match(id, /^[0-9a-f-]{36}$/);
+  assert.equal(JSON.parse(addEntry(original, { id, name: '第三项' }))[2].id, id);
+});
+
+test('item tags only add or remove without duplicate or field loss', () => {
+  const original = JSON.stringify([{ id: 'a', name: '道具', initialTags: ['旧'], hiddenTags: ['私有'] }]);
+  const added = addEntryTag(original, 'a', '旧');
+  assert.deepEqual(JSON.parse(added)[0].initialTags, ['旧']);
+  const next = addEntryTag(added, 'a', '新');
+  assert.deepEqual(JSON.parse(next)[0].initialTags, ['旧', '新']);
+  const removed = JSON.parse(removeEntryTag(next, 'a', '旧'))[0];
+  assert.deepEqual(removed.initialTags, ['新']);
+  assert.deepEqual(removed.hiddenTags, ['私有']);
+});
 
 test('reference scan identifies condition and effect IDs without matching unrelated text', () => {
   const sections = {
