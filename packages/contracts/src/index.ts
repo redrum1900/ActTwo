@@ -11,6 +11,7 @@ export type Condition =
   | { playerField: { id: string; eq?: string; has?: string } }
   | { npcLocation: { npcId: string; locationId: string } }
   | { flag: string }
+  | { storyEvent: string }
   | { location: string }
   | { period: string }
   | { discoveredNpc: string }
@@ -30,6 +31,7 @@ export type Effect =
   | { type: 'addIndicatorTag' | 'removeIndicatorTag'; target?: 'player' | `npc:${string}`; npcId?: string; id: string; tag: string }
   | { type: 'moveNpc'; target?: `npc:${string}`; locationId: string }
   | { type: 'setFlag'; flag: string }
+  | { type: 'recordStoryEvent'; eventId: string }
   | { type: 'discoverNpc'; npc: string }
   | { type: 'revealNpcItem'; npc: string; item: string }
   | { type: 'advanceTime' }
@@ -166,6 +168,12 @@ export interface GalleryDefinition {
   condition: Condition;
 }
 
+export interface StoryEventDefinition {
+  id: string;
+  label: string;
+  detail: string;
+}
+
 export interface GameScript {
   id: string;
   version: string;
@@ -196,6 +204,7 @@ export interface GameScript {
   locations: readonly LocationDefinition[];
   npcs: readonly NpcDefinition[];
   events: readonly EventDefinition[];
+  storyEvents: readonly StoryEventDefinition[];
   endings: readonly GalleryDefinition[];
   achievements: readonly GalleryDefinition[];
 }
@@ -278,6 +287,7 @@ export interface GameState {
   playerIndicators?: Record<string, NpcIndicatorState>;
   npcLocations?: Record<string, string>;
   flags: string[];
+  storyEventFlags: StoryEventDefinition[];
   tags?: string[];
   npcTags: Record<string, string[]>;
   knownPlayerItems: Record<string, string[]>;

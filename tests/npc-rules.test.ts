@@ -5,6 +5,7 @@ import { applyEvent, createInitialState, evaluateCondition, settlePlayerEvents, 
 
 const script: GameScript = {
   id: 'indicator-test', version: '1', title: '测试', startLocation: 'home', periods: ['白天'],
+  storyEvents: [],
   playerFields: [], stats: [], items: [{ id: 'gift', name: '礼物' }],
   locations: [{ id: 'home', name: '家', description: '', spots: [] }],
   npcs: [

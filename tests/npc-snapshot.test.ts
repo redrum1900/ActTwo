@@ -5,6 +5,7 @@ import { createInitialState, deriveNpcSnapshot, makeView } from '../packages/eng
 
 const script: GameScript = {
   id: 'persona-test', version: '1', title: '角色', startLocation: 'home', periods: ['夜晚'], playerFields: [], stats: [], items: [],
+  storyEvents: [],
   locations: [{ id: 'home', name: '电脑上', description: '', interactionMode: 'online', spots: [] },
     { id: 'cafe', name: '饭店', description: '', interactionMode: 'in-person', spots: [] }],
   npcs: [{ id: 'a', name: '甲', description: '', initialLocationId: 'home', initialItems: [],

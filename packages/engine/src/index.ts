@@ -35,7 +35,7 @@ export function createInitialState(script: GameScript, player: GameState['player
     playerItems: {}, npcItems, itemStates: Object.fromEntries(script.items.map((item) => [item.id, {
       owner: null, tags: [...(item.initialTags ?? [])], discovered: false,
     }])), playerStats, worldStats, npcStats, npcIndicators, playerIndicators, npcLocations,
-    flags: [], tags: [], npcTags: Object.fromEntries(script.npcs.map((npc) => [npc.id, []])),
+    flags: [], storyEventFlags: [], tags: [], npcTags: Object.fromEntries(script.npcs.map((npc) => [npc.id, []])),
     knownPlayerItems: Object.fromEntries(script.npcs.map((npc) => [npc.id, []])),
     unlockedLocations: [script.startLocation], discoveredNpcs: [], knownNpcItems,
     completedEvents: [], exploredSpots: [], chats: {}, activityLog: [], memories: {}, memorySegments: {}, ruleDiagnostics: [], awardedGallery: [], turns: 0,
@@ -117,6 +117,7 @@ export function evaluateCondition(condition: Condition | null | undefined, state
       condition.playerField.has !== undefined ? Array.isArray(value) && value.includes(condition.playerField.has) : false;
   }
   if ('npcLocation' in condition) return state.npcLocations?.[condition.npcLocation.npcId] === condition.npcLocation.locationId;
+  if ('storyEvent' in condition) return state.storyEventFlags?.some((entry) => entry.id === condition.storyEvent) ?? false;
   if ('hasItem' in condition) {
     const runtime = state.itemStates[condition.hasItem.item];
     return runtime?.owner === condition.hasItem.owner && (condition.hasItem.tags ?? []).every((tag) => runtime.tags.includes(tag));
@@ -235,6 +236,10 @@ function applyEffects(script: GameScript, state: GameState, effects: readonly Ef
       if (!next.awardedGallery.some((entry) => entry.kind === effect.kind && entry.id === effect.id)) next.awardedGallery.push({ kind: effect.kind, id: effect.id });
     } else if (effect.type === 'setFlag') {
       if (!next.flags.includes(effect.flag)) next.flags.push(effect.flag);
+    } else if (effect.type === 'recordStoryEvent') {
+      const definition = script.storyEvents?.find((entry) => entry.id === effect.eventId);
+      if (!definition) return null;
+      if (!next.storyEventFlags.some((entry) => entry.id === definition.id)) next.storyEventFlags.push(structuredClone(definition));
     } else if (effect.type === 'discoverNpc') {
       if (!next.discoveredNpcs.includes(effect.npc)) next.discoveredNpcs.push(effect.npc);
     } else if (effect.type === 'revealNpcItem') {

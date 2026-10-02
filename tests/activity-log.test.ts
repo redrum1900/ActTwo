@@ -1,7 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, makeView, searchLocation } from '../packages/engine/src/index.js';
+import { applyEvent, createInitialState, makeView, searchLocation } from '../packages/engine/src/index.js';
 import { loadScript } from '../packages/script/src/index.js';
+
+test('recording a story event does not expose its label or detail in activity changes', async () => {
+  const { settleWorld } = await import('../packages/engine/src/activity-log.js');
+  const base = loadScript('sword-and-screen');
+  const event = { id: '22222222-2222-4222-8222-222222222222', label: '隐藏标题', detail: '隐藏详情' };
+  const script = { ...base, storyEvents: [event], events: [{ id: 'record-hidden', npc: 'su-nian', intent: 'test', trigger: 'semantic' as const,
+    effects: [{ type: 'recordStoryEvent' as const, eventId: event.id }] }] };
+  const initial = createInitialState(script, { name: '阿言' });
+  const after = applyEvent(script, initial, 'record-hidden').state;
+  const settled = settleWorld(script, initial, after, { kind: 'chat', summary: '对话', npcId: 'su-nian' });
+  assert.deepEqual(settled.state.storyEventFlags, [event]);
+  assert.equal(JSON.stringify(settled.changes).includes(event.label), false);
+  assert.equal(JSON.stringify(settled.changes).includes(event.detail), false);
+});
 
 test('search records a discovered item but does not invent hidden discoveries', async () => {
   const module = await import('../packages/engine/src/activity-log.js').catch(() => ({} as { settleWorld?: unknown }));

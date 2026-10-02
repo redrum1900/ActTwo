@@ -36,7 +36,7 @@ const script = {
     { id: 'get-key', npc: 'ada', intent: 'ask-key', trigger: 'semantic', priority: 1, once: true,
       condition: { all: [{ location: 'station' }, { stat: { npc: 'ada', id: 'trust', gte: 20 } }] },
       effects: [{ type: 'transferItem', from: 'npc:ada', to: 'player', item: 'key' }, { type: 'setFlag', flag: 'gardenOpen' }] },
-  ], endings: [], achievements: [],
+  ], storyEvents: [], endings: [], achievements: [],
 } as const;
 
 test('new state uses script defaults and keeps NPC inventory private', () => {
@@ -71,6 +71,48 @@ test('new NPC indicators initialize typed values and independent runtime visibil
 test('new saves initialize an empty player activity timeline', () => {
   const fresh = createInitialState(script, { name: '阿宁' });
   assert.deepEqual(fresh.activityLog, []);
+});
+
+test('story events are recorded once as definition snapshots and can gate later rules', () => {
+  const storyEvent = { id: '11111111-1111-4111-8111-111111111111', label: '收到邀请', detail: '艾达邀请玩家。' };
+  const configured = { ...script, storyEvents: [storyEvent], events: [
+    { id: 'invite', npc: 'ada', intent: 'invite', trigger: 'semantic', once: true,
+      effects: [{ type: 'recordStoryEvent', eventId: storyEvent.id }] },
+    { id: 'invite-again', npc: 'ada', intent: 'invite-again', trigger: 'semantic',
+      effects: [{ type: 'recordStoryEvent', eventId: storyEvent.id },
+        { type: 'changeStat', scope: 'npc', npc: 'ada', id: 'trust', by: 1 }] },
+  ] } as const;
+  const initial = createInitialState(configured, { name: '阿宁' });
+  assert.deepEqual(initial.storyEventFlags, []);
+  assert.equal(evaluateCondition({ storyEvent: storyEvent.id }, initial), false);
+  assert.equal(evaluateCondition({ not: { storyEvent: storyEvent.id } }, initial), true);
+  const first = applyEvent(configured, initial, 'invite');
+  assert.equal(first.applied, true);
+  assert.deepEqual(first.state.storyEventFlags, [storyEvent]);
+  assert.notEqual(first.state.storyEventFlags[0], storyEvent);
+  assert.equal(evaluateCondition({ storyEvent: storyEvent.id }, first.state), true);
+  assert.equal(evaluateCondition({ not: { storyEvent: storyEvent.id } }, first.state), false);
+  assert.deepEqual(first.state.completedEvents, ['invite']);
+  assert.equal(applyEvent(configured, first.state, 'invite').applied, false);
+  const second = applyEvent(configured, first.state, 'invite-again');
+  assert.equal(second.applied, true);
+  assert.deepEqual(second.state.storyEventFlags, [storyEvent]);
+  assert.equal(second.state.npcStats.ada.trust, 1);
+});
+
+test('an unknown story event rejects the complete rule without partial changes', () => {
+  const configured = { ...script, storyEvents: [], events: [
+    { id: 'broken', npc: 'ada', intent: 'broken', trigger: 'semantic', effects: [
+      { type: 'changeStat', scope: 'npc', npc: 'ada', id: 'trust', by: 3 },
+      { type: 'recordStoryEvent', eventId: 'missing' },
+    ] },
+  ] } as const;
+  const initial = createInitialState(configured, { name: '阿宁' });
+  const result = applyEvent(configured, initial, 'broken');
+  assert.equal(result.applied, false);
+  assert.equal(result.state, initial);
+  assert.equal(initial.npcStats.ada.trust, 0);
+  assert.deepEqual(initial.storyEventFlags, []);
 });
 
 test('nested conditions check item ownership and NPC-specific numeric stats', () => {
