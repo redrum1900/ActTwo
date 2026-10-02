@@ -5,6 +5,7 @@ import SectionEditor from './SectionEditor.js';
 import ReviewWorkspace from './ReviewWorkspace.js';
 import { CreatorNavigation } from './CreatorNavigation.js';
 import { workspaceForPath, reviewStatusLabel, type CreatorWorkspace } from './review-ui.js';
+import { hasUnsavedChanges, resolveDirtyChoice } from './editor-session.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
@@ -33,6 +34,8 @@ export default function CreatorApp() {
   const savePromise = useRef<Promise<boolean> | null>(null);
   const savedContent = useRef('');
   const revision = useRef(1);
+  const dirtyChoiceResolver = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null);
+  const [showDirtyChoice, setShowDirtyChoice] = useState(false);
 
   const refreshList = async () => { const data = await creatorApi.list(); setProjects(data.projects); };
   useEffect(() => { void creatorApi.me().then(async user => { setAccount(user);
@@ -61,6 +64,15 @@ export default function CreatorApp() {
   }, [account, workspace]);
 
   const updateDraft = (value: string) => { draftRef.current = value; setDraft(value); setSaveState('dirty'); setReport(null); };
+  const resetDraft = () => {
+    if (!hasUnsavedChanges(draftRef.current, savedContent.current)) return;
+    if (!window.confirm('放弃当前配置中未保存的修改？')) return;
+    discardDraft();
+  };
+  const discardDraft = () => {
+    draftRef.current = savedContent.current; setDraft(savedContent.current);
+    setSaveState('saved'); setMessage(''); setReport(null);
+  };
   const save = async (): Promise<boolean> => {
     if (savePromise.current) { const previous = await savePromise.current; if (!previous) return false; }
     const active = projectRef.current;
@@ -87,29 +99,46 @@ export default function CreatorApp() {
     try { return await task; } finally { if (savePromise.current === task) savePromise.current = null; }
   };
   useEffect(() => {
-    if (!project || draft === savedContent.current || saveState === 'conflict' || saveState === 'error') return;
-    const timer = window.setTimeout(() => { void save(); }, 750);
-    return () => window.clearTimeout(timer);
-  }, [draft, project?.id, path, saveState]);
-  const switchPath = async (nextPath: string) => {
-    if (nextPath === path || !(await save())) return;
-    const section = projectRef.current?.sections[nextPath];
-    if (!section) return;
-    setPath(nextPath); pathRef.current = nextPath;
-    savedContent.current = section.content; revision.current = section.revision;
-    draftRef.current = section.content; setDraft(section.content);
-    setSaveState('saved'); setMessage('');
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges(draftRef.current, savedContent.current)) return;
+      event.preventDefault(); event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, []);
+  const askDirtyChoice = () => new Promise<'save' | 'discard' | 'cancel'>(resolve => {
+    dirtyChoiceResolver.current = resolve; setShowDirtyChoice(true);
+  });
+  const chooseDirty = (choice: 'save' | 'discard' | 'cancel') => {
+    setShowDirtyChoice(false); dirtyChoiceResolver.current?.(choice); dirtyChoiceResolver.current = null;
   };
-  const runAfterSave = async (action: () => Promise<void>) => { if (await save()) try { setMessage(''); await action(); }
-    catch (error) { setMessage(errorText(error)); } };
-  const goLibrary = () => void runAfterSave(async () => {
+  const runWithDraftGuard = async (action: () => Promise<void>) => {
+    if (hasUnsavedChanges(draftRef.current, savedContent.current)) {
+      const choice = await askDirtyChoice();
+      if (!(await resolveDirtyChoice(choice, save))) return;
+      if (choice === 'discard') discardDraft();
+    }
+    try { setMessage(''); await action(); } catch (error) { setMessage(errorText(error)); }
+  };
+  const switchPath = async (nextPath: string) => {
+    if (nextPath === path) return;
+    await runWithDraftGuard(async () => {
+      const section = projectRef.current?.sections[nextPath];
+      if (!section) return;
+      setPath(nextPath); pathRef.current = nextPath;
+      savedContent.current = section.content; revision.current = section.revision;
+      draftRef.current = section.content; setDraft(section.content);
+      setSaveState('saved'); setMessage('');
+    });
+  };
+  const goLibrary = () => void runWithDraftGuard(async () => {
     setProject(null); projectRef.current = null; setReport(null);
     setWorkspace('library');
     window.history.replaceState({}, '', '/creator'); await refreshList();
   });
   const goReview = () => {
     if (account?.role !== 'admin') return;
-    void runAfterSave(async () => {
+    void runWithDraftGuard(async () => {
       setProject(null); projectRef.current = null; setReport(null); setMessage('');
       setWorkspace('review'); window.history.replaceState({}, '', '/creator/review');
     });
@@ -131,26 +160,26 @@ export default function CreatorApp() {
       openProject(next); setShowCreate(false); setNewTitle(''); }
     catch (error) { setMessage(errorText(error)); }
   };
-  const addNpc = () => void runAfterSave(async () => {
+  const addNpc = () => void runWithDraftGuard(async () => {
     const id = prompt('NPC ID（英文小写、数字、短横线）'); if (!id) return;
     const name = prompt('NPC 名称'); if (!name) return;
     const next = await creatorApi.addNpc(project!.id, id.trim(), name.trim());
     setProject(next); projectRef.current = next;
     await switchPath(`npcs/${id.trim()}/base.json`);
   });
-  const removeNpc = (id: string) => void runAfterSave(async () => {
+  const removeNpc = (id: string) => void runWithDraftGuard(async () => {
     if (!confirm(`确定移除 NPC「${id}」及其全部配置？此操作不能撤销。`)) return;
     const next = await creatorApi.removeNpc(project!.id, id);
     openProject(next);
   });
-  const validate = () => void runAfterSave(async () => { setReport(await creatorApi.validate(project!.id)); });
-  const submit = () => void runAfterSave(async () => {
+  const validate = () => void runWithDraftGuard(async () => { setReport(await creatorApi.validate(project!.id)); });
+  const submit = () => void runWithDraftGuard(async () => {
     const check = await creatorApi.validate(project!.id); setReport(check);
     if (check.errors.length) { setMessage('校验未通过，不能提交审核。'); return; }
     await creatorApi.submit(project!.id); setMessage('提交成功，正在等待管理员审核；尚未更新玩家目录。');
     const next = await creatorApi.get(project!.id); projectRef.current = next; setProject(next);
   });
-  const deleteProject = () => void runAfterSave(async () => {
+  const deleteProject = () => void runWithDraftGuard(async () => {
     if (!confirm(`确定删除「${project!.title}」？发布版本会下架，草稿将无法恢复。`)) return;
     await creatorApi.delete(project!.id); setProject(null); projectRef.current = null;
     window.history.replaceState({}, '', '/creator'); await refreshList();
@@ -161,7 +190,7 @@ export default function CreatorApp() {
   return <div className="creator-app">
     <header className="creator-header"><a className="creator-brand" href="/">叙事档案 <span>／ 创作中心</span></a>
       {account && <CreatorNavigation role={account.role} workspace={workspace} onLibrary={goLibrary} onReview={goReview} />}
-      <div className="creator-header-right"><a href="/">玩家入口 ↗</a>{account && <><span>{account.username}{account.role === 'admin' ? ' · 管理员' : ''}</span><button onClick={() => void runAfterSave(async () => {
+      <div className="creator-header-right"><a href="/">玩家入口 ↗</a>{account && <><span>{account.username}{account.role === 'admin' ? ' · 管理员' : ''}</span><button onClick={() => void runWithDraftGuard(async () => {
         await creatorApi.logout(); setAccount(null); setProject(null); projectRef.current = null;
         setWorkspace('library'); window.history.replaceState({}, '', '/creator'); })}>退出</button></>}</div></header>
     {!account ? <main className="creator-auth"><div className="creator-auth-copy"><div className="creator-kicker">WRITE YOUR OWN WORLD</div>
@@ -212,7 +241,15 @@ export default function CreatorApp() {
               {[...report.errors, ...report.warnings].map((issue, index) => <button key={index} onClick={() => { const target = Object.keys(project.sections).find(entry => issue.path.startsWith(entry)); if (target) void switchPath(target); }}>
                 <code>{issue.path}</code> {issue.message}</button>)}</div>}
             <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} />
+            <div className="creator-save-actions"><span>{saveState === 'dirty' ? '修改尚未保存' : saveState === 'conflict' ? '其他窗口已修改，请处理冲突' : saveState === 'error' ? '保存失败，草稿仍在本页' : saveState === 'saving' ? '正在保存…' : '当前配置已保存'}</span>
+              <div><button type="button" disabled={saveState === 'saving' || !hasUnsavedChanges(draft, savedContent.current)} onClick={resetDraft}>重置</button>
+                <button className="creator-primary" type="button" disabled={saveState === 'saving' || !hasUnsavedChanges(draft, savedContent.current)} onClick={() => void save()}>保存</button></div></div>
             <div className="creator-bottom-actions"><button className="creator-danger-link" onClick={deleteProject}>删除这个故事</button>
               {project.publishedAt && <a href={`/`} target="_blank" rel="noreferrer">前往玩家目录 ↗</a>}</div></main></div>}
+    {showDirtyChoice && <div className="creator-modal-backdrop" role="presentation"><div className="creator-modal" role="dialog" aria-modal="true" aria-labelledby="creator-unsaved-title">
+      <div className="creator-kicker">UNSAVED CHANGES</div><h2 id="creator-unsaved-title">当前配置尚未保存</h2><p>离开后，未保存的修改会丢失。</p>
+      <div className="creator-modal-actions"><button type="button" onClick={() => chooseDirty('cancel')}>继续编辑</button>
+        <button type="button" onClick={() => chooseDirty('discard')}>放弃修改</button>
+        <button className="creator-primary" type="button" onClick={() => chooseDirty('save')}>保存并继续</button></div></div></div>}
   </div>;
 }
