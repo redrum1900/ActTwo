@@ -35,6 +35,14 @@ test('new gallery entries without a condition cannot pass publication validation
   assert.match(validateScript(script).join('；'), /图鉴 new-ending 缺少触发条件/);
 });
 
+test('item image references only accept controlled item-image URLs', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.items[0].image = 'https://example.com/image.png';
+  assert.match(validateScript(script).join('；'), /道具.*图片/);
+  script.items[0].image = '/api/item-images/11111111-1111-4111-8111-111111111111';
+  assert.equal(validateScript(script).some(message => message.includes('图片')), false);
+});
+
 test('validation rejects references to items that do not exist', () => {
   const script = loadScript('sword-and-screen');
   const broken = { ...structuredClone(script), npcs: script.npcs.map((npc, index) =>

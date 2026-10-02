@@ -355,7 +355,7 @@ export function makeView(script: GameScript, state: GameState) {
     const definition = script.items.find((item) => item.id === id);
     const runtime = state.itemStates[id];
     const variant = definition?.variants?.find((entry) => evaluateCondition(entry.when, state, script));
-    return { id, count: 1, name: definition?.name ?? id, description: variant?.description ?? definition?.description ?? '',
+    return { id, count: 1, name: definition?.name ?? id, image: definition?.image, description: variant?.description ?? definition?.description ?? '',
       detail: variant?.detail ?? definition?.detail ?? '', tags: runtime?.tags.filter((tag) => !definition?.hiddenTags?.includes(tag)) ?? [] };
   };
   const locations = script.locations.filter((entry) => state.unlockedLocations.includes(entry.id))

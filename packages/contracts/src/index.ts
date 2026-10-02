@@ -153,6 +153,7 @@ export interface PlayerRuleDefinition extends Omit<EventDefinition, 'npc' | 'tri
 export interface ItemDefinition {
   id: string;
   name: string;
+  image?: string;
   description?: string;
   detail?: string;
   initialTags?: readonly string[];

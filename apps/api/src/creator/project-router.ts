@@ -64,6 +64,24 @@ export function createProjectRouter(accounts: CreatorStore, projects: ProjectSto
     covers.discard(owner(req), req.params.id as string, req.params.assetId as string);
     return { ok: true };
   }));
+  router.post('/projects/:id/item-image', express.raw({ type: () => true, limit: '5mb' }), (req, res) => {
+    try {
+      const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      return res.status(201).json(covers.uploadItem(owner(req), req.params.id as string, bytes, req.headers['content-type']?.split(';')[0] ?? ''));
+    } catch (error) { return res.status(error instanceof ProjectError ? error.status : 500)
+      .json({ error: error instanceof Error ? error.message : '道具图片上传失败' }); }
+  });
+  router.get('/projects/:id/item-images/:assetId', (req, res) => {
+    try {
+      const image = covers.draftItem(owner(req), req.params.id as string, req.params.assetId as string);
+      res.type(image.mime).set('Cache-Control', 'private, no-store').send(image.bytes);
+    } catch (error) { res.status(error instanceof ProjectError ? error.status : 500)
+      .json({ error: error instanceof Error ? error.message : '道具图片读取失败' }); }
+  });
+  router.delete('/projects/:id/item-images/:assetId', handle(req => {
+    covers.discardItem(owner(req), req.params.id as string, req.params.assetId as string);
+    return { ok: true };
+  }));
   router.post('/projects/:id/npcs', handle(req => {
     const { id, name } = req.body ?? {};
     if (typeof id !== 'string' || typeof name !== 'string') throw new ProjectError('请输入 NPC ID 和名称');

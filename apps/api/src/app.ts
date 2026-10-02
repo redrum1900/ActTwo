@@ -65,6 +65,12 @@ export function createApp(store: SaveStore, adapter: ChatAdapter, options: { deb
       res.type(image.mime).set('Cache-Control', 'public, max-age=86400').send(image.bytes);
     } catch { res.status(404).json({ error: '封面不存在' }); }
   });
+  if (covers) app.get('/api/item-images/:assetId', (req, res) => {
+    try {
+      const image = covers.publishedItem(req.params.assetId as string);
+      res.type(image.mime).set('Cache-Control', 'public, max-age=86400').send(image.bytes);
+    } catch { res.status(404).json({ error: '道具图片不存在' }); }
+  });
   app.use('/api', (req, res, next) => {
     const cookie = req.headers.cookie?.match(/(?:^|;\s*)gd_guest=([a-f0-9-]{36})(?:;|$)/)?.[1];
     const owner = cookie ?? randomUUID();

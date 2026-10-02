@@ -143,6 +143,9 @@ export function validateScript(script: GameScript): string[] {
     if (new Set(ids).size !== ids.length) errors.push(`${label}存在重复 ID`);
   };
   unique('道具', script.items.map((item) => item.id));
+  for (const item of script.items) if (item.image !== undefined &&
+    (typeof item.image !== 'string' || !/^\/api\/item-images\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.image)))
+    errors.push(`道具 ${item.id} 图片必须是已上传的项目图片`);
   unique('道具名称', script.items.map((item) => item.name));
   unique('NPC', script.npcs.map((npc) => npc.id));
   unique('地点', script.locations.map((location) => location.id));

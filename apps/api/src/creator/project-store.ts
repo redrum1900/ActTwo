@@ -17,6 +17,7 @@ export interface ProjectSection { content: string; revision: number; updatedAt: 
 export interface CreatorProject { id: string; title: string; createdAt: string; updatedAt: string; publishedAt: string | null; sections: Record<string, ProjectSection> }
 
 export function createProjectStore(db: Database.Database) {
+  let itemImageValidator: ((projectId: string, script: GameScript) => ScriptIssue[]) | null = null;
   db.exec(`
     CREATE TABLE IF NOT EXISTS creator_projects (
       id TEXT PRIMARY KEY,
@@ -58,6 +59,7 @@ export function createProjectStore(db: Database.Database) {
   const parts = (id: string): ScriptParts => Object.fromEntries(Object.entries(sections(id)).map(([path, section]) => [path, section.content]));
 
   const store = {
+    setItemImageValidator(validator: (projectId: string, script: GameScript) => ScriptIssue[]) { itemImageValidator = validator; },
     list(owner: string): Omit<CreatorProject, 'sections'>[] {
       return (db.prepare('SELECT * FROM creator_projects WHERE owner_id=? AND deleted_at IS NULL ORDER BY updated_at DESC')
         .all(owner) as ProjectRow[]).map(({ id, title, created_at, updated_at, published_at }) =>
@@ -125,12 +127,14 @@ export function createProjectStore(db: Database.Database) {
       requireOwned(owner, id);
       const report = inspectScriptParts(parts(id));
       if (report.script && report.script.id !== id) report.errors.push({ path: 'manifest.json', message: '剧本 ID 不能更改' });
+      if (report.script && itemImageValidator) report.errors.push(...itemImageValidator(id, report.script));
       return { errors: report.errors, warnings: report.warnings };
     },
     validatedDraft(owner: string, id: string): GameScript {
       requireOwned(owner, id);
       const report = inspectScriptParts(parts(id));
       if (report.script && report.script.id !== id) report.errors.push({ path: 'manifest.json', message: '剧本 ID 不能更改' });
+      if (report.script && itemImageValidator) report.errors.push(...itemImageValidator(id, report.script));
       if (report.errors.length || !report.script)
         throw new ProjectError(`剧本校验失败：${report.errors.map(issue => `${issue.path} ${issue.message}`).join('；')}`);
       return report.script;

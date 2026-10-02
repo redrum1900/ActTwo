@@ -414,3 +414,5 @@ p { line-height: 1.8; text-wrap: pretty; }
 .stage-offer div { display: flex; gap: 8px; }
 .stage-offer button { border: 1px solid var(--accent); background: var(--card); color: var(--deep); padding: 7px 12px; cursor: pointer; }
 .stage-offer button:first-child { background: var(--deep); color: white; }
+.item-glyph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.item-detail-image { display: block; width: min(100%, 320px); max-height: 280px; object-fit: contain; margin: 12px 0; background: #f3f1e9; }

@@ -32,6 +32,15 @@ export const creatorApi = {
   },
   discardCover: (id: string, cover: string) => api<{ ok: boolean }>(`${base}/projects/${encodeURIComponent(id)}/covers/${encodeURIComponent(cover.split('/').at(-1) ?? '')}`,
     { method: 'DELETE' }),
+  uploadItemImage: async (id: string, file: File): Promise<{ image: string }> => {
+    const response = await fetch(`/api${base}/projects/${encodeURIComponent(id)}/item-image`, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': file.type }, body: file });
+    const data = await response.json() as { image?: string; error?: string };
+    if (!response.ok || !data.image) throw new Error(data.error ?? `道具图片上传失败 (${response.status})`);
+    return { image: data.image };
+  },
+  discardItemImage: (id: string, image: string) => api<{ ok: boolean }>(`${base}/projects/${encodeURIComponent(id)}/item-images/${encodeURIComponent(image.split('/').at(-1) ?? '')}`,
+    { method: 'DELETE' }),
   addNpc: (id: string, npcId: string, name: string) => api<Project>(`${base}/projects/${encodeURIComponent(id)}/npcs`,
     { method: 'POST', body: JSON.stringify({ id: npcId, name }) }),
   removeNpc: (id: string, npcId: string) => api<Project>(`${base}/projects/${encodeURIComponent(id)}/npcs/${encodeURIComponent(npcId)}`, { method: 'DELETE' }),

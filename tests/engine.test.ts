@@ -50,6 +50,16 @@ test('new state uses script defaults and keeps NPC inventory private', () => {
   assert.deepEqual(view.locations.map((location) => location.id), ['station']);
 });
 
+test('item view exposes the published image URL when configured', () => {
+  const image = '/api/item-images/11111111-1111-4111-8111-111111111111';
+  const configured = { ...script, items: [{ ...script.items[0], image }, script.items[1]] } as const;
+  const state = createInitialState(configured, {});
+  state.itemStates.key.owner = 'player';
+  state.playerItems.key = 1;
+  const view = makeView(configured, state);
+  assert.equal(view.items[0].image, image);
+});
+
 test('new NPC indicators initialize typed values and independent runtime visibility', () => {
   const configured = { ...script, npcs: [{ ...script.npcs[0], indicators: [
     { id: 'affection', name: '好感', type: 'number', initial: 2, min: 0, max: 100, playerVisible: true },
