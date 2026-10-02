@@ -1,5 +1,13 @@
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 
+const publishedVersionsTable = `CREATE TABLE IF NOT EXISTS published_script_versions (
+  project_id VARCHAR(128) NOT NULL, release_sequence BIGINT NOT NULL,
+  version VARCHAR(64) NOT NULL, content_hash VARCHAR(128) NOT NULL,
+  script_json LONGTEXT NOT NULL, review_id VARCHAR(64), published_at VARCHAR(35) NOT NULL,
+  PRIMARY KEY (project_id, release_sequence), UNIQUE KEY published_version_label (project_id, version),
+  FOREIGN KEY (project_id) REFERENCES creator_projects(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`;
+
 const tables = [
   `CREATE TABLE creator_accounts (
     id VARCHAR(64) PRIMARY KEY, username VARCHAR(32) NOT NULL UNIQUE,
@@ -30,6 +38,7 @@ const tables = [
     published_at VARCHAR(35) NOT NULL,
     FOREIGN KEY (project_id) REFERENCES creator_projects(id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  publishedVersionsTable,
   `CREATE TABLE creator_review_submissions (
     id VARCHAR(64) PRIMARY KEY, project_id VARCHAR(128) NOT NULL, author_id VARCHAR(64) NOT NULL,
     script_json LONGTEXT NOT NULL, content_hash VARCHAR(128) NOT NULL, version VARCHAR(64) NOT NULL,
@@ -80,9 +89,23 @@ export async function migrateMysql(pool: Pool): Promise<void> {
       "SELECT COUNT(*) AS total FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='schema_migrations'");
     if (!Number(ledgerRows[0]?.total)) throw new Error('目标数据库不为空且缺少迁移版本表，停止以保护现有数据');
     const [versions] = await pool.query<RowDataPacket[]>('SELECT version FROM schema_migrations');
-    if (versions.length === 1 && Number(versions[0].version) === 1) return;
+    if (versions.length === 1 && Number(versions[0].version) === 2) return;
+    if (versions.length === 1 && Number(versions[0].version) === 1) {
+      await pool.query(publishedVersionsTable);
+      await pool.execute(`INSERT INTO published_script_versions
+        (project_id,release_sequence,version,content_hash,script_json,review_id,published_at)
+        SELECT project_id,1,version,content_hash,script_json,NULL,published_at FROM published_scripts
+        ON DUPLICATE KEY UPDATE project_id=project_id`);
+      const [missing] = await pool.query<RowDataPacket[]>(`SELECT COUNT(*) AS missing FROM published_scripts p
+        LEFT JOIN published_script_versions v ON v.project_id=p.project_id AND v.release_sequence=1
+        WHERE v.project_id IS NULL OR BINARY v.version<>BINARY p.version
+          OR BINARY v.content_hash<>BINARY p.content_hash OR BINARY v.script_json<>BINARY p.script_json`);
+      if (Number(missing[0]?.missing ?? 0)) throw new Error('历史发布快照迁移校验失败');
+      await pool.execute('UPDATE schema_migrations SET version=2 WHERE version=1');
+      return;
+    }
     throw new Error('MySQL 迁移版本不兼容');
   }
   for (const sql of tables) await pool.query(sql);
-  await pool.execute('INSERT INTO schema_migrations (version,applied_at) VALUES (?,?)', [1, new Date().toISOString()]);
+  await pool.execute('INSERT INTO schema_migrations (version,applied_at) VALUES (?,?)', [2, new Date().toISOString()]);
 }
