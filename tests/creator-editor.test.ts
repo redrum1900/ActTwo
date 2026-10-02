@@ -17,7 +17,7 @@ test('creator tabs group script, player and each NPC while editor exposes readab
   const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'manifest.json',
     content: '{"id":"demo","title":"故事","periods":["白天"]}', onChange: () => {} }));
   assert.match(html, /故事设定/);
-  assert.match(html, /标题 · title/);
+  assert.match(html, /标题/);
   assert.match(html, /编辑模式/);
 });
 

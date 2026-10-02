@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
 import { fieldLabels, labelOf, starterEntry } from './sections.js';
+import ManifestEditor from './ManifestEditor.js';
+import LocationsEditor from './LocationsEditor.js';
 
-interface Props { path: string; content: string; onChange: (value: string) => void }
+interface Props { path: string; content: string; onChange: (value: string) => void;
+  savedLocations?: { id: string; name: string }[] }
 const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 const primitive = (value: unknown) => ['string', 'number', 'boolean'].includes(typeof value);
 
-export default function SectionEditor({ path, content, onChange }: Props) {
+export default function SectionEditor({ path, content, onChange, savedLocations = [] }: Props) {
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const parsed = useMemo(() => { try { return { value: JSON.parse(content) as unknown, error: '' }; }
     catch (error) { return { value: undefined, error: error instanceof Error ? error.message : 'JSON 格式错误' }; } }, [content]);
@@ -27,11 +30,15 @@ export default function SectionEditor({ path, content, onChange }: Props) {
   const value = parsed.value;
   return <section className="creator-section-editor">
     <div className="creator-section-head"><div><div className="creator-kicker">CONFIGURATION / {path}</div><h2>{info.name}</h2><p>{info.help}</p></div>
-      <div className="creator-mode" role="group" aria-label="编辑模式"><button className={mode === 'form' ? 'active' : ''} onClick={() => setMode('form')}>表单</button>
+      <div className="creator-mode" role="group" aria-label="编辑模式"><button className={mode === 'form' ? 'active' : ''} disabled={!!parsed.error} onClick={() => setMode('form')}>表单</button>
         <button className={mode === 'json' ? 'active' : ''} onClick={() => setMode('json')}>JSON</button></div></div>
-    {parsed.error && <div className="creator-error" role="alert">JSON 尚未完成：{parsed.error}。草稿仍可自动保存，发布前需要修正。</div>}
+    {parsed.error && <div className="creator-error" role="alert">JSON 尚未完成：{parsed.error}。原文会保留，请修正后再切回表单。</div>}
     {mode === 'json' || parsed.error ? <textarea className="creator-json" spellCheck={false} aria-label={`${info.name} JSON`}
       value={content} onChange={event => onChange(event.target.value)} />
+      : path === 'manifest.json' && value && typeof value === 'object' && !Array.isArray(value)
+        ? <ManifestEditor content={content} onChange={onChange} savedLocations={savedLocations} />
+      : path === 'locations.json' && Array.isArray(value)
+        ? <LocationsEditor content={content} onChange={onChange} />
       : Array.isArray(value) ? <div className="creator-entries">
         <div className="creator-entry-toolbar"><span>共 {value.length} 项</span><button onClick={() => update([...value, starterEntry(path, value.length)])}>＋ 添加一项</button></div>
         {value.length === 0 && <div className="creator-empty-inline">暂无内容。点击“添加一项”开始配置。</div>}
