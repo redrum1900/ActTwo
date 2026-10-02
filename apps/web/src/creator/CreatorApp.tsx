@@ -10,6 +10,7 @@ import { saveWithCover } from './cover-save.js';
 import { patchManifest } from './section-forms.js';
 import { referencedStoryEventIds } from './story-event-references.js';
 import { conditionSourcesFromSections } from './condition-sources.js';
+import { patchItemsImages, saveWithItemImages } from './item-image-save.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
@@ -23,6 +24,7 @@ export default function CreatorApp() {
   const [path, setPath] = useState('manifest.json');
   const [draft, setDraft] = useState('');
   const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [itemImageFiles, setItemImageFiles] = useState<Record<string, File>>({});
   const [saveState, setSaveState] = useState<'saved' | 'dirty' | 'saving' | 'conflict' | 'error'>('saved');
   const [message, setMessage] = useState('');
   const [report, setReport] = useState<Report | null>(null);
@@ -35,6 +37,7 @@ export default function CreatorApp() {
   const [showCreate, setShowCreate] = useState(false);
   const draftRef = useRef(draft);
   const coverFileRef = useRef<File | null>(null);
+  const itemImageFilesRef = useRef<Record<string, File>>({});
   const projectRef = useRef(project);
   const pathRef = useRef(path);
   const savePromise = useRef<Promise<boolean> | null>(null);
@@ -61,6 +64,7 @@ export default function CreatorApp() {
     revision.current = next.sections[first]?.revision ?? 1;
     draftRef.current = savedContent.current; setDraft(savedContent.current);
     coverFileRef.current = null; setCoverFile(null);
+    itemImageFilesRef.current = {}; setItemImageFiles({});
     setSaveState('saved'); setReport(null); setMessage('');
     window.history.replaceState({}, '', `/creator/${encodeURIComponent(next.id)}`);
   };
@@ -76,7 +80,14 @@ export default function CreatorApp() {
     setSaveState(file || hasUnsavedChanges(draftRef.current, savedContent.current) ? 'dirty' : 'saved');
     setReport(null);
   };
-  const isDirty = () => hasUnsavedChanges(draftRef.current, savedContent.current) || !!coverFileRef.current;
+  const updateItemImageFile = (id: string, file: File | null) => {
+    const next = { ...itemImageFilesRef.current };
+    if (file) next[id] = file; else delete next[id];
+    itemImageFilesRef.current = next; setItemImageFiles(next);
+    setSaveState(Object.keys(next).length || hasUnsavedChanges(draftRef.current, savedContent.current) ? 'dirty' : 'saved');
+    setReport(null);
+  };
+  const isDirty = () => hasUnsavedChanges(draftRef.current, savedContent.current) || !!coverFileRef.current || Object.keys(itemImageFilesRef.current).length > 0;
   const resetDraft = () => {
     if (!isDirty()) return;
     if (!window.confirm('放弃当前配置中未保存的修改？')) return;
@@ -85,6 +96,7 @@ export default function CreatorApp() {
   const discardDraft = () => {
     draftRef.current = savedContent.current; setDraft(savedContent.current);
     coverFileRef.current = null; setCoverFile(null);
+    itemImageFilesRef.current = {}; setItemImageFiles({});
     setSaveState('saved'); setMessage(''); setReport(null);
   };
   const save = async (): Promise<boolean> => {
@@ -94,13 +106,19 @@ export default function CreatorApp() {
     const savingPath = pathRef.current;
     const content = draftRef.current;
     const file = savingPath === 'manifest.json' ? coverFileRef.current : null;
+    const pendingItemFiles = savingPath === 'items.json' ? { ...itemImageFilesRef.current } : {};
     const task = (async () => {
       setSaveState('saving');
       try {
-        const result = file ? await saveWithCover(content, file,
+        const result: { section: Awaited<ReturnType<typeof creatorApi.save>>; content: string;
+          images?: Record<string, string>; uploadedIds?: string[] } = file ? await saveWithCover(content, file,
           selected => creatorApi.uploadCover(active.id, selected),
           nextContent => creatorApi.save(active.id, savingPath, nextContent, revision.current),
           cover => creatorApi.discardCover(active.id, cover).then(() => {}))
+          : Object.keys(pendingItemFiles).length ? await saveWithItemImages(content, pendingItemFiles,
+            selected => creatorApi.uploadItemImage(active.id, selected),
+            nextContent => creatorApi.save(active.id, savingPath, nextContent, revision.current),
+            image => creatorApi.discardItemImage(active.id, image).then(() => {}))
           : { section: await creatorApi.save(active.id, savingPath, content, revision.current), content };
         const { section } = result;
         revision.current = section.revision;
@@ -111,8 +129,17 @@ export default function CreatorApp() {
           try { nextDraft = patchManifest(nextDraft, { cover: JSON.parse(result.content).cover }); }
           catch { /* Keep an in-progress JSON edit exactly as typed. */ }
         }
+        if (result.images && !settled.canLeave) {
+          try { nextDraft = patchItemsImages(nextDraft, result.images); }
+          catch { /* Keep an in-progress JSON edit exactly as typed. */ }
+        }
         draftRef.current = nextDraft; setDraft(nextDraft);
         if (file && coverFileRef.current === file) { coverFileRef.current = null; setCoverFile(null); }
+        if (result.uploadedIds) {
+          const remaining = { ...itemImageFilesRef.current };
+          for (const id of result.uploadedIds) if (remaining[id] === pendingItemFiles[id]) delete remaining[id];
+          itemImageFilesRef.current = remaining; setItemImageFiles(remaining);
+        }
         const title = savingPath === 'manifest.json' ? (() => { try { return JSON.parse(section.content).title as string; } catch { return undefined; } })() : undefined;
         const next = { ...projectRef.current!, ...(title ? { title } : {}), sections: { ...projectRef.current!.sections, [savingPath]: section } };
         projectRef.current = next; setProject(next);
@@ -158,6 +185,7 @@ export default function CreatorApp() {
       savedContent.current = section.content; revision.current = section.revision;
       draftRef.current = section.content; setDraft(section.content);
       coverFileRef.current = null; setCoverFile(null);
+      itemImageFilesRef.current = {}; setItemImageFiles({});
       setSaveState('saved'); setMessage('');
     });
   };
@@ -285,10 +313,11 @@ export default function CreatorApp() {
             <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} savedLocations={savedLocations} savedStoryEvents={savedStoryEvents}
               referencedStoryEventIds={referencedStoryEventIds(project.sections)}
               conditionSources={conditionSourcesFromSections(project.sections)}
-              projectId={project.id} coverFile={coverFile} onCoverFileChange={updateCoverFile} />
+              projectId={project.id} coverFile={coverFile} onCoverFileChange={updateCoverFile}
+              itemImageFiles={itemImageFiles} onItemImageFileChange={updateItemImageFile} />
             <div className="creator-save-actions"><span>{saveState === 'dirty' ? '修改尚未保存' : saveState === 'conflict' ? '其他窗口已修改，请处理冲突' : saveState === 'error' ? '保存失败，草稿仍在本页' : saveState === 'saving' ? '正在保存…' : '当前配置已保存'}</span>
-              <div><button type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile)} onClick={resetDraft}>重置</button>
-                <button className="creator-primary" type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile)} onClick={() => void save()}>保存</button></div></div>
+              <div><button type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile && !Object.keys(itemImageFiles).length)} onClick={resetDraft}>重置</button>
+                <button className="creator-primary" type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile && !Object.keys(itemImageFiles).length)} onClick={() => void save()}>保存</button></div></div>
             <div className="creator-bottom-actions"><button className="creator-danger-link" onClick={deleteProject}>删除这个故事</button>
               {project.publishedAt && <a href={`/`} target="_blank" rel="noreferrer">前往玩家目录 ↗</a>}</div></main></div>}
     {showDirtyChoice && <div className="creator-modal-backdrop" role="presentation"><div className="creator-modal" role="dialog" aria-modal="true" aria-labelledby="creator-unsaved-title">

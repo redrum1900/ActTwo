@@ -12,11 +12,13 @@ interface Props { path: string; content: string; onChange: (value: string) => vo
   savedStoryEvents?: { id: string; label: string }[];
   referencedStoryEventIds?: readonly string[];
   conditionSources?: ConditionSources;
-  coverFile?: File | null; onCoverFileChange?: (file: File | null) => void }
+  coverFile?: File | null; onCoverFileChange?: (file: File | null) => void;
+  itemImageFiles?: Record<string, File>; onItemImageFileChange?: (id: string, file: File | null) => void }
 const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 const primitive = (value: unknown) => ['string', 'number', 'boolean'].includes(typeof value);
 
-export default function SectionEditor({ path, content, onChange, savedLocations = [], savedStoryEvents = [], referencedStoryEventIds = [], conditionSources, projectId, coverFile, onCoverFileChange }: Props) {
+export default function SectionEditor({ path, content, onChange, savedLocations = [], savedStoryEvents = [], referencedStoryEventIds = [], conditionSources, projectId, coverFile, onCoverFileChange,
+  itemImageFiles, onItemImageFileChange }: Props) {
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const parsed = useMemo(() => { try { return { value: JSON.parse(content) as unknown, error: '' }; }
     catch (error) { return { value: undefined, error: error instanceof Error ? error.message : 'JSON 格式错误' }; } }, [content]);
@@ -58,7 +60,7 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
       : path === 'locations.json' && Array.isArray(value)
         ? <LocationsEditor content={content} onChange={onChange} />
       : path === 'items.json' && Array.isArray(value)
-        ? <ItemsEditor content={content} onChange={onChange} />
+        ? <ItemsEditor content={content} onChange={onChange} projectId={projectId} imageFiles={itemImageFiles} onImageFileChange={onItemImageFileChange} />
       : (path === 'endings.json' || path === 'achievements.json') && Array.isArray(value)
         ? <GalleryEditor content={content} onChange={onChange} kind={path === 'endings.json' ? '结局' : '成就'} sources={sources} onJson={() => setMode('json')} />
       : Array.isArray(value) ? <div className="creator-entries">

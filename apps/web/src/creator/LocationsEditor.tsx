@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Select } from 'antd';
 import { newLocationId, patchLocation } from './section-forms.js';
 
 interface Props { content: string; onChange: (value: string) => void }
@@ -31,8 +32,8 @@ export default function LocationsEditor({ content, onChange }: Props) {
       <button type="button" className="creator-danger-link" onClick={remove}>删除地点</button></div>
       <div className="creator-form-grid">
         <label className="creator-field"><span>地点名称</span><input value={selected.name ?? ''} onChange={event => patch({ name: event.target.value })} placeholder="例如：老街饭店" /></label>
-        <label className="creator-field"><span>交流方式</span><select value={selected.interactionMode ?? 'in-person'} onChange={event => patch({ interactionMode: event.target.value })}>
-          <option value="in-person">面对面</option><option value="online">线上</option></select></label>
+        <label className="creator-field"><span>交流方式</span><Select value={selected.interactionMode ?? 'in-person'}
+          onChange={value => patch({ interactionMode: value })} options={[{ value: 'in-person', label: '面对面' }, { value: 'online', label: '线上' }]} /></label>
         <label className="creator-field creator-wide"><span>简介 / 描述</span><textarea rows={6} value={selected.description ?? ''}
           onChange={event => patch({ description: event.target.value })} placeholder="玩家到达这里时所处的环境、氛围与可见内容" /></label>
       </div>

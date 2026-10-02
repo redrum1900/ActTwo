@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Select } from 'antd';
 import { changePeriod, movePeriod, patchManifest, removePeriod } from './section-forms.js';
 import StoryEventsEditor from './StoryEventsEditor.js';
 
@@ -71,11 +72,9 @@ export default function ManifestEditor({ content, onChange, savedLocations, proj
           }} />
       </div></div>
       <label className="creator-field creator-wide"><span>开局地点</span>
-        <select value={selectedLocation} onChange={event => patch({ startLocation: event.target.value })}>
-          {missingLocation && <option value={selectedLocation}>无效地点 · {selectedLocation}</option>}
-          {!selectedLocation && <option value="">请选择开局地点</option>}
-          {savedLocations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
-        </select>
+        <Select value={selectedLocation || undefined} placeholder="请选择开局地点" onChange={value => patch({ startLocation: value })}
+          options={[...(missingLocation ? [{ value: selectedLocation, label: `无效地点 · ${selectedLocation}`, disabled: true }] : []),
+            ...savedLocations.map(location => ({ value: location.id, label: location.name }))]} />
         {missingLocation && <small className="creator-field-warning">当前开局地点已不存在。请先在地点页保存地点，再重新选择。</small>}
         {!savedLocations.length && <small>暂无已保存地点。先到「地点」页新增并保存。</small>}
       </label>

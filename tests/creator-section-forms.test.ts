@@ -96,11 +96,15 @@ test('time periods can change order but never become empty', () => {
 });
 
 test('story settings use saved location names and report a missing start location', () => {
+  const selected = renderToStaticMarkup(createElement(SectionEditor, { path: 'manifest.json',
+    content: '{"id":"story-a","title":"故事","startLocation":"cafe","periods":["白天"]}', onChange: () => {},
+    savedLocations: [{ id: 'cafe', name: '老街饭店' }] }));
   const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'manifest.json',
     content: '{"id":"story-a","title":"故事","startLocation":"lost","periods":["白天"]}', onChange: () => {},
     savedLocations: [{ id: 'cafe', name: '老街饭店' }] }));
   assert.match(html, /开局地点/);
-  assert.match(html, /老街饭店/);
+  assert.match(selected, /老街饭店/);
+  assert.match(selected, /ant-select/);
   assert.match(html, /当前开局地点已不存在/);
   assert.doesNotMatch(html, /新增字段/);
   assert.doesNotMatch(html, /唯一 ID/);
