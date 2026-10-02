@@ -24,3 +24,12 @@ test('failed section save removes only the newly uploaded cover and keeps origin
   assert.deepEqual(discarded, ['/api/covers/new-id']);
   assert.equal(JSON.parse(original).cover, undefined);
 });
+
+test('invalid JSON after image selection also discards its uploaded temporary asset', async () => {
+  const discarded: string[] = [];
+  await assert.rejects(saveWithCover('{', {} as File,
+    async () => ({ cover: '/api/covers/temporary' }),
+    async () => { throw new Error('save must not run'); },
+    async cover => { discarded.push(cover); }), /JSON/);
+  assert.deepEqual(discarded, ['/api/covers/temporary']);
+});
