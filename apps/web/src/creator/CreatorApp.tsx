@@ -23,7 +23,6 @@ export default function CreatorApp() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [newId, setNewId] = useState('');
   const [newTitle, setNewTitle] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [templates, setTemplates] = useState<{ id: string; title: string }[]>([]);
@@ -128,8 +127,8 @@ export default function CreatorApp() {
   };
   const create = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage('');
-    try { const next = await creatorApi.create(newId.trim(), newTitle.trim(), templateId || undefined);
-      openProject(next); setShowCreate(false); setNewId(''); setNewTitle(''); }
+    try { const next = await creatorApi.create(newTitle.trim(), templateId || undefined);
+      openProject(next); setShowCreate(false); setNewTitle(''); }
     catch (error) { setMessage(errorText(error)); }
   };
   const addNpc = () => void runAfterSave(async () => {
@@ -188,8 +187,6 @@ export default function CreatorApp() {
         {showCreate && <div className="creator-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowCreate(false); }}><form className="creator-modal" onSubmit={create}>
           <div className="creator-kicker">NEW STORY</div><h2>建立一个新世界</h2>
           <label>故事名称<input value={newTitle} onChange={event => setNewTitle(event.target.value)} maxLength={100} required placeholder="例如：雨夜来信" /></label>
-          <label>故事 ID<small>用于链接，创建后不可改；小写英文、数字和短横线</small><input value={newId} onChange={event => setNewId(event.target.value.toLowerCase())}
-            pattern="[a-z0-9][a-z0-9-]*" required placeholder="rainy-letter" /></label>
           <label>从模板开始<select value={templateId} onChange={event => setTemplateId(event.target.value)}><option value="">空白故事</option>
             {templates.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
           <div className="creator-modal-actions"><button type="button" onClick={() => setShowCreate(false)}>取消</button><button className="creator-primary" type="submit">创建故事 ↗</button></div>

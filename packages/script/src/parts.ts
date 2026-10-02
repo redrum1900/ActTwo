@@ -9,7 +9,7 @@ const format = (value: unknown) => JSON.stringify(value, null, 2);
 export function blankScriptParts(id: string, title: string): ScriptParts {
   return {
     'manifest.json': format({ id, version: '1.0.0', title, subtitle: '', description: '', world: '',
-      startLocation: 'start', periods: ['白天', '夜晚'] }),
+      startLocation: 'start', periods: ['白天', '下午', '晚上'] }),
     'player-form.json': format([{ id: 'name', label: '你的名字', type: 'input', default: '玩家', required: true, editable: true, public: true }]),
     'items.json': '[]',
     'locations.json': format([{ id: 'start', name: '起点', description: '', interactionMode: 'in-person', spots: [] }]),

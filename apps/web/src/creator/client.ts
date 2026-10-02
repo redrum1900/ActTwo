@@ -20,7 +20,7 @@ export const creatorApi = {
   list: () => api<{ projects: ProjectSummary[] }>(`${base}/projects`),
   get: (id: string) => api<Project>(`${base}/projects/${encodeURIComponent(id)}`),
   templates: () => api<{ templates: { id: string; title: string; description: string }[] }>(`${base}/templates`),
-  create: (id: string, title: string, templateId?: string) => api<Project>(`${base}/projects`, { method: 'POST', body: JSON.stringify({ id, title, templateId }) }),
+  create: (title: string, templateId?: string) => api<Project>(`${base}/projects`, { method: 'POST', body: JSON.stringify({ title, templateId }) }),
   save: (id: string, path: string, content: string, revision: number) => api<Section>(`${base}/projects/${encodeURIComponent(id)}/sections`,
     { method: 'PUT', body: JSON.stringify({ path, content, revision }) }),
   addNpc: (id: string, npcId: string, name: string) => api<Project>(`${base}/projects/${encodeURIComponent(id)}/npcs`,

@@ -9,6 +9,7 @@ test('blank creator package assembles to a playable story with one character', (
   assert.equal(script.id, 'new-story');
   assert.equal(script.npcs.length, 1);
   assert.equal(script.npcs[0].initialLocationId, script.startLocation);
+  assert.deepEqual(script.periods, ['白天', '下午', '晚上']);
   assert.ok(script.contentHash);
 });
 

@@ -1,4 +1,5 @@
 import express, { type Request } from 'express';
+import { randomUUID } from 'node:crypto';
 import { loadScript, listScripts } from '@game/script';
 import type { CreatorStore } from './auth-store.js';
 import { creatorAccount } from './auth-router.js';
@@ -23,14 +24,14 @@ export function createProjectRouter(accounts: CreatorStore, projects: ProjectSto
   router.get('/projects', handle(req => ({ projects: projects.list(owner(req)).map(project => ({ ...project,
     review: reviews.latestForProject(owner(req), project.id) })) })));
   router.post('/projects', handle(req => {
-    const { id, title, templateId } = req.body ?? {};
-    if (typeof id !== 'string' || typeof title !== 'string') throw new ProjectError('请输入故事 ID 和名称');
+    const { title, templateId } = req.body ?? {};
+    if (typeof title !== 'string') throw new ProjectError('请输入故事名称');
     let template;
     if (templateId !== undefined) {
       if (typeof templateId !== 'string' || !listScripts().some(script => script.id === templateId)) throw new ProjectError('模板不存在');
       template = loadScript(templateId);
     }
-    const project = projects.create(owner(req), id, title, template);
+    const project = projects.create(owner(req), `story-${randomUUID()}`, title, template);
     return { ...project, review: null };
   }, 201));
   router.get('/projects/:id', handle(req => {

@@ -29,39 +29,40 @@ test('only admin approves submitted snapshot; old release survives pending and r
     const authorCookie = author.cookie;
     assert.equal(author.data.role, 'author');
     assert.equal((await call('/creator/reviews', 'GET', undefined, authorCookie)).status, 403);
-    const created = await call('/creator/projects', 'POST', { id: 'review-api', title: '线上初版' }, authorCookie);
+    const created = await call('/creator/projects', 'POST', { title: '线上初版' }, authorCookie);
     assert.equal(created.status, 201);
-    assert.equal((await call('/creator/projects/review-api/publish', 'POST', {}, authorCookie)).status, 404);
-    const first = await call('/creator/projects/review-api/submit', 'POST', {}, authorCookie);
+    const story = `/creator/projects/${created.data.id}`;
+    assert.equal((await call(`${story}/publish`, 'POST', {}, authorCookie)).status, 404);
+    const first = await call(`${story}/submit`, 'POST', {}, authorCookie);
     assert.equal(first.status, 201);
-    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === 'review-api'), false);
+    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === created.data.id), false);
     assert.equal((await call(`/creator/reviews/${first.data.id}/approve`, 'POST', {}, authorCookie)).status, 403);
     const admin = await call('/creator/login', 'POST', { username: 'superadmin', password: 'admin-password-1' });
     const adminCookie = admin.cookie;
-    const adminStory = await call('/creator/projects', 'POST', { id: 'admin-story', title: '管理员的故事' }, adminCookie);
+    const adminStory = await call('/creator/projects', 'POST', { title: '管理员的故事' }, adminCookie);
     assert.equal(adminStory.status, 201);
-    const ownSubmission = await call('/creator/projects/admin-story/submit', 'POST', {}, adminCookie);
+    const ownSubmission = await call(`/creator/projects/${adminStory.data.id}/submit`, 'POST', {}, adminCookie);
     assert.equal(ownSubmission.status, 201);
-    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === 'admin-story'), false);
+    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === adminStory.data.id), false);
     assert.equal((await call(`/creator/reviews/${ownSubmission.data.id}/approve`, 'POST', {}, adminCookie)).status, 200);
-    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === 'admin-story'), true);
+    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === adminStory.data.id), true);
     assert.equal((await call('/creator/reviews', 'GET', undefined, adminCookie)).data.reviews[0].id, first.data.id);
     assert.equal((await call(`/creator/reviews/${first.data.id}`, 'GET', undefined, adminCookie)).data.script.title, '线上初版');
     assert.equal((await call(`/creator/reviews/${first.data.id}/approve`, 'POST', {}, adminCookie)).status, 200);
-    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === 'review-api'), true);
-    assert.equal((await call('/games/review-api/new', 'POST', { player: { name: '小夏' } })).status, 200);
-    const detail = await call('/creator/projects/review-api', 'GET', undefined, authorCookie);
+    assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === created.data.id), true);
+    assert.equal((await call(`/games/${created.data.id}/new`, 'POST', { player: { name: '小夏' } })).status, 200);
+    const detail = await call(story, 'GET', undefined, authorCookie);
     const manifest = detail.data.sections['manifest.json'];
-    await call('/creator/projects/review-api/sections', 'PUT', {
+    await call(`${story}/sections`, 'PUT', {
       path: 'manifest.json', content: manifest.content.replace('线上初版', '待审新版'), revision: manifest.revision,
     }, authorCookie);
-    const second = await call('/creator/projects/review-api/submit', 'POST', {}, authorCookie);
+    const second = await call(`${story}/submit`, 'POST', {}, authorCookie);
     assert.equal(second.status, 201);
-    assert.equal((await call('/games/review-api')).data.title, '线上初版');
+    assert.equal((await call(`/games/${created.data.id}`)).data.title, '线上初版');
     assert.equal((await call(`/creator/reviews/${second.data.id}/reject`, 'POST', { reason: '需要完善说明' }, adminCookie)).status, 200);
-    assert.equal((await call('/games/review-api')).data.title, '线上初版');
-    assert.equal((await call('/creator/projects/review-api', 'GET', undefined, authorCookie)).data.review.rejectionReason, '需要完善说明');
+    assert.equal((await call(`/games/${created.data.id}`)).data.title, '线上初版');
+    assert.equal((await call(story, 'GET', undefined, authorCookie)).data.review.rejectionReason, '需要完善说明');
     const other = await call('/creator/register', 'POST', { username: 'other', password: 'other-password-1' });
-    assert.equal((await call('/creator/projects/review-api', 'GET', undefined, other.cookie)).status, 404);
+    assert.equal((await call(story, 'GET', undefined, other.cookie)).status, 404);
   } finally { server.close(); accounts.close(); saves.close(); }
 });
