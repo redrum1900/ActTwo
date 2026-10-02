@@ -8,6 +8,7 @@ import { workspaceForPath, reviewStatusLabel, type CreatorWorkspace } from './re
 import { hasUnsavedChanges, resolveDirtyChoice, settleSavedDraft } from './editor-session.js';
 import { saveWithCover } from './cover-save.js';
 import { patchManifest } from './section-forms.js';
+import { referencedStoryEventIds } from './story-event-references.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
@@ -219,6 +220,12 @@ export default function CreatorApp() {
       return locations.filter(location => typeof location.id === 'string' && typeof location.name === 'string') as { id: string; name: string }[];
     } catch { return []; }
   })();
+  const savedStoryEvents = (() => {
+    try {
+      const manifest = JSON.parse(project?.sections['manifest.json']?.content ?? '{}') as { storyEvents?: { id?: unknown; label?: unknown }[] };
+      return (manifest.storyEvents ?? []).filter(event => typeof event.id === 'string' && typeof event.label === 'string') as { id: string; label: string }[];
+    } catch { return []; }
+  })();
 
   if (loading) return <div className="creator-loading">正在打开创作中心…</div>;
   return <div className="creator-app">
@@ -274,7 +281,8 @@ export default function CreatorApp() {
             {report && <div className="creator-report"><strong>{report.errors.length ? `校验发现 ${report.errors.length} 个错误` : '校验通过，可以提交审核'}</strong>
               {[...report.errors, ...report.warnings].map((issue, index) => <button key={index} onClick={() => { const target = Object.keys(project.sections).find(entry => issue.path.startsWith(entry)); if (target) void switchPath(target); }}>
                 <code>{issue.path}</code> {issue.message}</button>)}</div>}
-            <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} savedLocations={savedLocations}
+            <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} savedLocations={savedLocations} savedStoryEvents={savedStoryEvents}
+              referencedStoryEventIds={referencedStoryEventIds(project.sections)}
               projectId={project.id} coverFile={coverFile} onCoverFileChange={updateCoverFile} />
             <div className="creator-save-actions"><span>{saveState === 'dirty' ? '修改尚未保存' : saveState === 'conflict' ? '其他窗口已修改，请处理冲突' : saveState === 'error' ? '保存失败，草稿仍在本页' : saveState === 'saving' ? '正在保存…' : '当前配置已保存'}</span>
               <div><button type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile)} onClick={resetDraft}>重置</button>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { changePeriod, movePeriod, patchManifest, removePeriod } from './section-forms.js';
+import StoryEventsEditor from './StoryEventsEditor.js';
 
 interface Props {
   content: string;
@@ -8,9 +9,11 @@ interface Props {
   projectId?: string;
   coverFile?: File | null;
   onCoverFileChange?: (file: File | null) => void;
+  referencedStoryEventIds?: readonly string[];
 }
 
-export default function ManifestEditor({ content, onChange, savedLocations, projectId, coverFile = null, onCoverFileChange }: Props) {
+export default function ManifestEditor({ content, onChange, savedLocations, projectId, coverFile = null, onCoverFileChange,
+  referencedStoryEventIds = [] }: Props) {
   const manifest = JSON.parse(content) as Record<string, unknown>;
   const periods = Array.isArray(manifest.periods) ? manifest.periods.map(String) : [];
   const selectedLocation = String(manifest.startLocation ?? '');
@@ -95,5 +98,6 @@ export default function ManifestEditor({ content, onChange, savedLocations, proj
       <div className="creator-modal-actions"><button type="button" onClick={() => setPeriodModal(null)}>取消</button>
         <button className="creator-primary" type="button" disabled={!periodName.trim()} onClick={savePeriod}>确定</button></div>
     </div></div>}
+    <StoryEventsEditor content={content} onChange={onChange} referencedIds={referencedStoryEventIds} />
   </div>;
 }

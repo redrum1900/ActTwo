@@ -10,6 +10,7 @@
   "dependencies": {
     "@game/contracts": "*",
     "@game/engine": "*",
+    "antd": "^6.6.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   }

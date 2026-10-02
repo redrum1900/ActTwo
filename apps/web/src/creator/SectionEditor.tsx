@@ -2,14 +2,17 @@ import { useMemo, useState } from 'react';
 import { fieldLabels, labelOf, starterEntry } from './sections.js';
 import ManifestEditor from './ManifestEditor.js';
 import LocationsEditor from './LocationsEditor.js';
+import StoryEventRuleControls from './StoryEventRuleControls.js';
 
 interface Props { path: string; content: string; onChange: (value: string) => void;
   savedLocations?: { id: string; name: string }[]; projectId?: string;
+  savedStoryEvents?: { id: string; label: string }[];
+  referencedStoryEventIds?: readonly string[];
   coverFile?: File | null; onCoverFileChange?: (file: File | null) => void }
 const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 const primitive = (value: unknown) => ['string', 'number', 'boolean'].includes(typeof value);
 
-export default function SectionEditor({ path, content, onChange, savedLocations = [], projectId, coverFile, onCoverFileChange }: Props) {
+export default function SectionEditor({ path, content, onChange, savedLocations = [], savedStoryEvents = [], referencedStoryEventIds = [], projectId, coverFile, onCoverFileChange }: Props) {
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const parsed = useMemo(() => { try { return { value: JSON.parse(content) as unknown, error: '' }; }
     catch (error) { return { value: undefined, error: error instanceof Error ? error.message : 'JSON 格式错误' }; } }, [content]);
@@ -41,7 +44,7 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
       value={content} onChange={event => onChange(event.target.value)} />
       : path === 'manifest.json' && value && typeof value === 'object' && !Array.isArray(value)
         ? <ManifestEditor content={content} onChange={onChange} savedLocations={savedLocations} projectId={projectId}
-          coverFile={coverFile} onCoverFileChange={onCoverFileChange} />
+          coverFile={coverFile} onCoverFileChange={onCoverFileChange} referencedStoryEventIds={referencedStoryEventIds} />
       : path === 'locations.json' && Array.isArray(value)
         ? <LocationsEditor content={content} onChange={onChange} />
       : Array.isArray(value) ? <div className="creator-entries">
@@ -51,6 +54,9 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
           <button className="creator-danger-link" onClick={() => update(value.filter((_, i) => i !== index))}>移除</button></div>
           {entry && typeof entry === 'object' && !Array.isArray(entry) ? renderObject(entry as Record<string, unknown>, next => update(value.map((item, i) => i === index ? next : item)))
             : <textarea value={stringify(entry)} onChange={event => { try { const next = JSON.parse(event.target.value); update(value.map((item, i) => i === index ? next : item)); } catch { /* Advanced JSON editor supports incomplete input. */ } }} />}
+          {entry && typeof entry === 'object' && !Array.isArray(entry) && (path === 'player/rules.json' || path.endsWith('/rules.json')) &&
+            <StoryEventRuleControls rule={entry as Record<string, unknown>} savedStoryEvents={savedStoryEvents}
+              onChange={next => update(value.map((item, i) => i === index ? next : item))} />}
           <button className="creator-small" onClick={() => { setMode('json'); }}>编辑完整结构 ↗</button>
         </div>)}</div>
         : value && typeof value === 'object' ? renderObject(value as Record<string, unknown>, update)

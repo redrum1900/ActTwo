@@ -21,6 +21,24 @@ test('creator tabs group script, player and each NPC while editor exposes readab
   assert.match(html, /编辑模式/);
 });
 
+test('story settings expose event definitions without raw IDs', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'manifest.json', onChange: () => {},
+    content: JSON.stringify({ title: '故事', startLocation: 'home', periods: ['白天'],
+      storyEvents: [{ id: '11111111-1111-4111-8111-111111111111', label: '首次见面', detail: '在饭店见到她' }] }) }));
+  assert.match(html, /剧情事件/);
+  assert.match(html, /首次见面/);
+  assert.match(html, /在饭店见到她/);
+  assert.doesNotMatch(html, /11111111-1111-4111-8111-111111111111/);
+});
+
+test('rule forms show saved story event labels in selection controls', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'npcs/su-nian/rules.json', onChange: () => {},
+    savedStoryEvents: [{ id: '11111111-1111-4111-8111-111111111111', label: '首次告白' }],
+    content: JSON.stringify([{ id: 'confession', intent: '告白', trigger: 'semantic', effects: [] }]) }));
+  assert.match(html, /需要已发生的剧情事件/);
+  assert.match(html, /成功后记录剧情事件/);
+});
+
 test('creator status distinguishes pending revisions from a live release', () => {
   assert.equal(reviewStatusLabel({ publishedAt: null, review: null }), '草稿');
   assert.equal(reviewStatusLabel({ publishedAt: null, review: { status: 'pending' } }), '待审核');

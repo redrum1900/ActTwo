@@ -3,7 +3,46 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import SectionEditor from '../apps/web/src/creator/SectionEditor.js';
-import { patchManifest, patchLocation, newLocationId, changePeriod, movePeriod, removePeriod } from '../apps/web/src/creator/section-forms.js';
+import { patchManifest, patchLocation, newLocationId, changePeriod, movePeriod, removePeriod,
+  newStoryEvent, patchStoryEvent, removeStoryEvent } from '../apps/web/src/creator/section-forms.js';
+import { setStoryEventGate, setRecordedStoryEvents } from '../apps/web/src/creator/story-event-rule.js';
+import { referencedStoryEventIds } from '../apps/web/src/creator/story-event-references.js';
+
+test('reference scan identifies condition and effect IDs without matching unrelated text', () => {
+  const sections = {
+    'manifest.json': { content: JSON.stringify({ storyEvents: [{ id: 'one', label: 'one', detail: '' }] }) },
+    'items.json': { content: JSON.stringify([{ description: 'one' }]) },
+    'endings.json': { content: JSON.stringify([{ condition: { storyEvent: 'one' } }]) },
+    'npcs/a/rules.json': { content: JSON.stringify([{ effects: [{ type: 'recordStoryEvent', eventId: 'two' }] }]) },
+  };
+  assert.deepEqual(referencedStoryEventIds(sections), ['one', 'two']);
+});
+
+test('story event rule controls preserve unrelated conditions and effects', () => {
+  const rule = { id: 'invite', when: { indicator: { id: 'affection', gte: 10 } },
+    effects: [{ type: 'changeIndicator', id: 'affection', by: 1 }] };
+  const gated = setStoryEventGate(rule, 'event-one');
+  assert.deepEqual(gated.when, { all: [rule.when, { storyEvent: 'event-one' }] });
+  assert.deepEqual(setStoryEventGate(gated, null).when, rule.when);
+  const recorded = setRecordedStoryEvents(rule, ['event-one', 'event-two']);
+  assert.deepEqual(recorded.effects, [...rule.effects, { type: 'recordStoryEvent', eventId: 'event-one' },
+    { type: 'recordStoryEvent', eventId: 'event-two' }]);
+  assert.deepEqual(setRecordedStoryEvents(recorded, []).effects, rule.effects);
+});
+
+test('story events get stable UUIDs and edits preserve other manifest fields', () => {
+  const first = newStoryEvent();
+  const second = newStoryEvent();
+  assert.notEqual(first.id, second.id);
+  assert.match(first.id, /^[0-9a-f-]{36}$/);
+  const original = JSON.stringify({ id: 'story-a', title: '故事', storyEvents: [first, second], theme: { accent: 'red' } });
+  const updated = JSON.parse(patchStoryEvent(original, first.id, { label: '见面', detail: '第一次见面' }));
+  assert.equal(updated.storyEvents[0].id, first.id);
+  assert.equal(updated.storyEvents[0].label, '见面');
+  assert.equal(updated.storyEvents[1].id, second.id);
+  assert.deepEqual(updated.theme, { accent: 'red' });
+  assert.deepEqual(JSON.parse(removeStoryEvent(JSON.stringify(updated), first.id)).storyEvents, [second]);
+});
 
 test('manifest form edits preserve hidden and unknown configuration', () => {
   const original = JSON.stringify({ id: 'story-a', version: '2.0.0', theme: { accent: 'red' }, title: '旧名', custom: 7 });

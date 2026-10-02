@@ -5,6 +5,22 @@ export function patchManifest(content: string, patch: Record<string, unknown>): 
   return format({ ...current, ...patch });
 }
 
+export function newStoryEvent() {
+  return { id: crypto.randomUUID(), label: '', detail: '' };
+}
+
+export function patchStoryEvent(content: string, id: string, patch: { label?: string; detail?: string }): string {
+  const current = JSON.parse(content) as Record<string, unknown>;
+  const events = Array.isArray(current.storyEvents) ? current.storyEvents as { id: string; label: string; detail: string }[] : [];
+  return format({ ...current, storyEvents: events.map(event => event.id === id ? { ...event, ...patch, id } : event) });
+}
+
+export function removeStoryEvent(content: string, id: string): string {
+  const current = JSON.parse(content) as Record<string, unknown>;
+  const events = Array.isArray(current.storyEvents) ? current.storyEvents as { id: string }[] : [];
+  return format({ ...current, storyEvents: events.filter(event => event.id !== id) });
+}
+
 export function patchLocation(content: string, id: string, patch: Record<string, unknown>): string {
   const locations = JSON.parse(content) as Record<string, unknown>[];
   return format(locations.map(location => location.id === id ? { ...location, ...patch } : location));
