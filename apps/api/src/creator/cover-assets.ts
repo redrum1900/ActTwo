@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import { ProjectError, type ProjectStore } from './project-store.js';
+
+export function defaultCoverDirectory(): string { return path.resolve(fileURLToPath(new URL('../../../../data/covers/', import.meta.url))); }
 
 const maxBytes = 5 * 1024 * 1024;
 const imageTypes = {

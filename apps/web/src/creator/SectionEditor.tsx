@@ -13,6 +13,8 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const parsed = useMemo(() => { try { return { value: JSON.parse(content) as unknown, error: '' }; }
     catch (error) { return { value: undefined, error: error instanceof Error ? error.message : 'JSON 格式错误' }; } }, [content]);
+  const invalidLocations = path === 'locations.json' && Array.isArray(parsed.value)
+    && parsed.value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.id !== 'string');
   const info = labelOf(path);
   const update = (value: unknown) => onChange(stringify(value));
   const renderObject = (value: Record<string, unknown>, commit: (next: Record<string, unknown>) => void) =>
@@ -31,10 +33,11 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
   const value = parsed.value;
   return <section className="creator-section-editor">
     <div className="creator-section-head"><div><div className="creator-kicker">CONFIGURATION / {path}</div><h2>{info.name}</h2><p>{info.help}</p></div>
-      <div className="creator-mode" role="group" aria-label="编辑模式"><button className={mode === 'form' ? 'active' : ''} disabled={!!parsed.error} onClick={() => setMode('form')}>表单</button>
+      <div className="creator-mode" role="group" aria-label="编辑模式"><button className={mode === 'form' ? 'active' : ''} disabled={!!parsed.error || invalidLocations} onClick={() => setMode('form')}>表单</button>
         <button className={mode === 'json' ? 'active' : ''} onClick={() => setMode('json')}>JSON</button></div></div>
     {parsed.error && <div className="creator-error" role="alert">JSON 尚未完成：{parsed.error}。原文会保留，请修正后再切回表单。</div>}
-    {mode === 'json' || parsed.error ? <textarea className="creator-json" spellCheck={false} aria-label={`${info.name} JSON`}
+    {invalidLocations && <div className="creator-error" role="alert">地点列表存在缺少 ID 的条目，请在 JSON 模式修正；原文不会被覆盖。</div>}
+    {mode === 'json' || parsed.error || invalidLocations ? <textarea className="creator-json" spellCheck={false} aria-label={`${info.name} JSON`}
       value={content} onChange={event => onChange(event.target.value)} />
       : path === 'manifest.json' && value && typeof value === 'object' && !Array.isArray(value)
         ? <ManifestEditor content={content} onChange={onChange} savedLocations={savedLocations} projectId={projectId}

@@ -48,3 +48,9 @@ test('location editor presents one location tab and hides unfinished spots', () 
   assert.match(html, /新增地点/);
   assert.doesNotMatch(html, /调查点/);
 });
+
+test('malformed location entries remain editable as JSON instead of crashing the form', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'locations.json', content: '[null]', onChange: () => {} }));
+  assert.match(html, /地点 JSON/);
+  assert.match(html, /\[null\]/);
+});

@@ -15,8 +15,7 @@ import { createProjectRouter } from './creator/project-router.js';
 import type { ProjectStore } from './creator/project-store.js';
 import { createReviewRouter } from './creator/review-router.js';
 import type { ReviewStore } from './creator/review-store.js';
-import { createCoverAssets } from './creator/cover-assets.js';
-import { fileURLToPath } from 'node:url';
+import { createCoverAssets, defaultCoverDirectory } from './creator/cover-assets.js';
 
 function readPlayer(fields: readonly FieldDefinition[], input: unknown): GameState['player'] {
   const values = (input && typeof input === 'object' && !Array.isArray(input)) ? input as Record<string, unknown> : {};
@@ -50,7 +49,7 @@ export function createApp(store: SaveStore, adapter: ChatAdapter, options: { deb
   const app = express();
   const scripts = options.scripts ?? createScriptRepository(options.projectStore);
   const covers = options.creatorStore && options.projectStore
-    ? createCoverAssets(options.creatorStore.db, options.coversDir ?? fileURLToPath(new URL('../../../../data/covers/', import.meta.url)), options.projectStore)
+    ? createCoverAssets(options.creatorStore.db, options.coversDir ?? defaultCoverDirectory(), options.projectStore)
     : null;
   const queueMemory = createMemoryWorker(store, adapter);
   const inFlightTurns = new Map<string, { npcId: string; text: string; task: Promise<{ game: GameScript; save: NonNullable<ReturnType<SaveStore['getAuto']>>; result: Awaited<ReturnType<typeof runChat>> }> }>();
