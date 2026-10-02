@@ -5,8 +5,9 @@ import SectionEditor from './SectionEditor.js';
 import ReviewWorkspace from './ReviewWorkspace.js';
 import { CreatorNavigation } from './CreatorNavigation.js';
 import { workspaceForPath, reviewStatusLabel, type CreatorWorkspace } from './review-ui.js';
-import { hasUnsavedChanges, resolveDirtyChoice } from './editor-session.js';
+import { hasUnsavedChanges, resolveDirtyChoice, settleSavedDraft } from './editor-session.js';
 import { saveWithCover } from './cover-save.js';
+import { patchManifest } from './section-forms.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
@@ -102,15 +103,19 @@ export default function CreatorApp() {
         const { section } = result;
         revision.current = section.revision;
         savedContent.current = section.content;
-        if (file) {
-          if (draftRef.current === content) { draftRef.current = result.content; setDraft(result.content); }
-          else { draftRef.current = JSON.stringify({ ...JSON.parse(draftRef.current), cover: JSON.parse(result.content).cover }, null, 2); setDraft(draftRef.current); }
-          coverFileRef.current = null; setCoverFile(null);
+        const settled = settleSavedDraft(content, draftRef.current, section.content);
+        let nextDraft = settled.draft;
+        if (file && !settled.canLeave) {
+          try { nextDraft = patchManifest(nextDraft, { cover: JSON.parse(result.content).cover }); }
+          catch { /* Keep an in-progress JSON edit exactly as typed. */ }
         }
-        const next = { ...projectRef.current!, sections: { ...projectRef.current!.sections, [savingPath]: section } };
+        draftRef.current = nextDraft; setDraft(nextDraft);
+        if (file && coverFileRef.current === file) { coverFileRef.current = null; setCoverFile(null); }
+        const title = savingPath === 'manifest.json' ? (() => { try { return JSON.parse(section.content).title as string; } catch { return undefined; } })() : undefined;
+        const next = { ...projectRef.current!, ...(title ? { title } : {}), sections: { ...projectRef.current!.sections, [savingPath]: section } };
         projectRef.current = next; setProject(next);
         setSaveState(isDirty() ? 'dirty' : 'saved');
-        return true;
+        return !isDirty();
       } catch (error) {
         setSaveState(errorText(error).includes('冲突') ? 'conflict' : 'error');
         setMessage(errorText(error));
