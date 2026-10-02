@@ -5,16 +5,18 @@ import LocationsEditor from './LocationsEditor.js';
 import StoryEventRuleControls from './StoryEventRuleControls.js';
 import ItemsEditor from './ItemsEditor.js';
 import GalleryEditor from './GalleryEditor.js';
+import type { ConditionSources } from './condition-tree.js';
 
 interface Props { path: string; content: string; onChange: (value: string) => void;
   savedLocations?: { id: string; name: string }[]; projectId?: string;
   savedStoryEvents?: { id: string; label: string }[];
   referencedStoryEventIds?: readonly string[];
+  conditionSources?: ConditionSources;
   coverFile?: File | null; onCoverFileChange?: (file: File | null) => void }
 const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 const primitive = (value: unknown) => ['string', 'number', 'boolean'].includes(typeof value);
 
-export default function SectionEditor({ path, content, onChange, savedLocations = [], savedStoryEvents = [], referencedStoryEventIds = [], projectId, coverFile, onCoverFileChange }: Props) {
+export default function SectionEditor({ path, content, onChange, savedLocations = [], savedStoryEvents = [], referencedStoryEventIds = [], conditionSources, projectId, coverFile, onCoverFileChange }: Props) {
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const parsed = useMemo(() => { try { return { value: JSON.parse(content) as unknown, error: '' }; }
     catch (error) { return { value: undefined, error: error instanceof Error ? error.message : 'JSON 格式错误' }; } }, [content]);
@@ -24,6 +26,8 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
   const invalidTabbedEntries = tabbedPath && Array.isArray(parsed.value)
     && parsed.value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.id !== 'string' || !entry.id);
   const info = labelOf(path);
+  const sources: ConditionSources = conditionSources ?? { storyEvents: savedStoryEvents, items: [], npcs: [], locations: savedLocations,
+    playerIndicators: [], periods: [], playerFields: [], rules: [] };
   const update = (value: unknown) => onChange(stringify(value));
   const renderObject = (value: Record<string, unknown>, commit: (next: Record<string, unknown>) => void) =>
     <div className="creator-fields">{Object.entries(value).map(([key, current]) => <label className="creator-field" key={key}>
@@ -56,7 +60,7 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
       : path === 'items.json' && Array.isArray(value)
         ? <ItemsEditor content={content} onChange={onChange} />
       : (path === 'endings.json' || path === 'achievements.json') && Array.isArray(value)
-        ? <GalleryEditor content={content} onChange={onChange} kind={path === 'endings.json' ? '结局' : '成就'} />
+        ? <GalleryEditor content={content} onChange={onChange} kind={path === 'endings.json' ? '结局' : '成就'} sources={sources} onJson={() => setMode('json')} />
       : Array.isArray(value) ? <div className="creator-entries">
         <div className="creator-entry-toolbar"><span>共 {value.length} 项</span><button onClick={() => update([...value, starterEntry(path, value.length)])}>＋ 添加一项</button></div>
         {value.length === 0 && <div className="creator-empty-inline">暂无内容。点击“添加一项”开始配置。</div>}
@@ -66,6 +70,7 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
             : <textarea value={stringify(entry)} onChange={event => { try { const next = JSON.parse(event.target.value); update(value.map((item, i) => i === index ? next : item)); } catch { /* Advanced JSON editor supports incomplete input. */ } }} />}
           {entry && typeof entry === 'object' && !Array.isArray(entry) && (path === 'player/rules.json' || path.endsWith('/rules.json')) &&
             <StoryEventRuleControls rule={entry as Record<string, unknown>} savedStoryEvents={savedStoryEvents}
+              sources={{ ...sources, ownerNpcId: /^npcs\/([^/]+)\/rules\.json$/.exec(path)?.[1] }} onJson={() => setMode('json')}
               onChange={next => update(value.map((item, i) => i === index ? next : item))} />}
           <button className="creator-small" onClick={() => { setMode('json'); }}>编辑完整结构 ↗</button>
         </div>)}</div>

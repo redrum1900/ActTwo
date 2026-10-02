@@ -1,10 +1,13 @@
 import TabbedEntriesEditor from './TabbedEntriesEditor.js';
 import { addEntry, newEntryId, patchEntryById, removeEntry } from './section-forms.js';
+import type { Condition } from '@game/contracts';
+import ConditionEditor from './ConditionEditor.js';
+import type { ConditionSources } from './condition-tree.js';
 
 interface GalleryDraft { id: string; name: string; description?: string; hidden?: boolean; condition?: unknown; [key: string]: unknown }
-interface Props { content: string; onChange: (value: string) => void; kind: '结局' | '成就' }
+interface Props { content: string; onChange: (value: string) => void; kind: '结局' | '成就'; sources: ConditionSources; onJson?: () => void }
 
-export default function GalleryEditor({ content, onChange, kind }: Props) {
+export default function GalleryEditor({ content, onChange, kind, sources, onJson }: Props) {
   const entries = JSON.parse(content) as GalleryDraft[];
   const patch = (id: string, fields: Record<string, unknown>) => onChange(patchEntryById(content, id, fields));
   return <TabbedEntriesEditor entries={entries} kind={kind} onAdd={() => {
@@ -19,8 +22,9 @@ export default function GalleryEditor({ content, onChange, kind }: Props) {
         onChange={event => patch(entry.id, { hidden: event.target.checked })} /><span>隐藏条目（满足条件前不显示）</span></label>
     </div>
     <div className="creator-condition-preview"><strong>触发条件</strong>
-      {entry.condition ? <code>{JSON.stringify(entry.condition)}</code> : <p className="creator-field-warning">尚未设置条件。可保存草稿，但提交审核前必须设置。</p>}
-      <small>下一步接入可视化条件编辑器；当前可在 JSON 模式设置，切回表单不会丢失。</small>
+      {entry.condition ? <ConditionEditor value={entry.condition as Condition} sources={sources} onJson={onJson}
+        onChange={condition => patch(entry.id, { condition })} /> : <><p className="creator-field-warning">尚未设置条件。可保存草稿，但提交审核前必须设置。</p>
+          <button type="button" className="creator-small" onClick={() => patch(entry.id, { condition: { all: [{ storyEvent: sources.storyEvents[0]?.id ?? '' }] } })}>＋ 添加触发条件</button></>}
     </div>
   </>} />;
 }

@@ -35,7 +35,7 @@ test('rule forms show saved story event labels in selection controls', () => {
   const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'npcs/su-nian/rules.json', onChange: () => {},
     savedStoryEvents: [{ id: '11111111-1111-4111-8111-111111111111', label: '首次告白' }],
     content: JSON.stringify([{ id: 'confession', intent: '告白', trigger: 'semantic', effects: [] }]) }));
-  assert.match(html, /需要已发生的剧情事件/);
+  assert.match(html, /前置条件/);
   assert.match(html, /成功后记录剧情事件/);
 });
 
@@ -52,6 +52,16 @@ test('items and gallery use compact tabs without editable IDs or add-field contr
   assert.match(ending, /结局列表/);
   assert.match(ending, /隐藏条目/);
   assert.doesNotMatch(ending, /唯一 ID|添加字段/);
+});
+
+test('gallery condition tree offers independent AND OR NOT controls and item/event choices', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'endings.json', onChange: () => {},
+    savedStoryEvents: [{ id: 'event-one', label: '首次见面' }],
+    content: JSON.stringify([{ id: 'end-a', name: '归来', description: '', condition: { all: [{ storyEvent: 'event-one' }] } }]) }));
+  assert.match(html, /全部满足/);
+  assert.match(html, /分组关系/);
+  assert.match(html, /取反/);
+  assert.match(html, /剧情事件/);
 });
 
 test('creator status distinguishes pending revisions from a live release', () => {

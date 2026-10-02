@@ -9,6 +9,7 @@ import { hasUnsavedChanges, resolveDirtyChoice, settleSavedDraft } from './edito
 import { saveWithCover } from './cover-save.js';
 import { patchManifest } from './section-forms.js';
 import { referencedStoryEventIds } from './story-event-references.js';
+import { conditionSourcesFromSections } from './condition-sources.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
@@ -283,6 +284,7 @@ export default function CreatorApp() {
                 <code>{issue.path}</code> {issue.message}</button>)}</div>}
             <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} savedLocations={savedLocations} savedStoryEvents={savedStoryEvents}
               referencedStoryEventIds={referencedStoryEventIds(project.sections)}
+              conditionSources={conditionSourcesFromSections(project.sections)}
               projectId={project.id} coverFile={coverFile} onCoverFileChange={updateCoverFile} />
             <div className="creator-save-actions"><span>{saveState === 'dirty' ? '修改尚未保存' : saveState === 'conflict' ? '其他窗口已修改，请处理冲突' : saveState === 'error' ? '保存失败，草稿仍在本页' : saveState === 'saving' ? '正在保存…' : '当前配置已保存'}</span>
               <div><button type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile)} onClick={resetDraft}>重置</button>
