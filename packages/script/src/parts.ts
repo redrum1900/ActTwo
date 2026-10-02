@@ -9,7 +9,7 @@ const format = (value: unknown) => JSON.stringify(value, null, 2);
 export function blankScriptParts(id: string, title: string): ScriptParts {
   return {
     'manifest.json': format({ id, version: '1.0.0', title, subtitle: '', description: '', world: '',
-      startLocation: 'start', periods: ['白天', '下午', '晚上'] }),
+      startLocation: 'start', periods: ['白天', '下午', '晚上'], storyEvents: [] }),
     'player-form.json': format([{ id: 'name', label: '你的名字', type: 'input', default: '玩家', required: true, editable: true, public: true }]),
     'items.json': '[]',
     'locations.json': format([{ id: 'start', name: '起点', description: '', interactionMode: 'in-person', spots: [] }]),
@@ -71,6 +71,7 @@ export function inspectScriptParts(parts: ScriptParts): { script: GameScript | n
     for (const field of ['id', 'version', 'title', 'startLocation'])
       if (typeof value[field] !== 'string' || !value[field]) errors.push({ path: `manifest.json.${field}`, message: '应为非空文本' });
     if (!Array.isArray(value.periods)) errors.push({ path: 'manifest.json.periods', message: '应为数组' });
+    if (!Array.isArray(value.storyEvents)) errors.push({ path: 'manifest.json.storyEvents', message: '应为数组' });
   }
   const arrays = Object.fromEntries(requiredArrays.map((path) => [path, read(path)]));
   for (const path of requiredArrays) if (arrays[path] !== undefined && !Array.isArray(arrays[path])) errors.push({ path, message: '应为数组' });

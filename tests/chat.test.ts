@@ -176,7 +176,7 @@ test('Su Nian keeps conditional psychological and behavioral details within each
   assert.ok(confessed.includes('认真表达过心意'));
   assert.ok(confessed.includes('撤回'));
   state.npcIndicators!['su-nian'].metInPerson.value = true;
-  state.flags.push('knows-kendo');
+  state.storyEventFlags.push(structuredClone(game.storyEvents.find((entry) => entry.label === '知道剑道秘密')!));
   const restaurant = deriveNpcSnapshot(game, state, 'su-nian').persona;
   assert.ok(restaurant.includes('主动谈训练'));
   state.npcIndicators!['su-nian'].visitedHerHome.value = true;

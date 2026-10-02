@@ -11,6 +11,7 @@ test('fixed prompt is unchanged by affection, inventory and once-rule eligibilit
   const first = buildCacheFriendlyParts(deriveChatContext(script, state, script.npcs[0], '你好'));
   state.npcIndicators!['su-nian'].affection.value = 22;
   state.completedEvents.push('confession');
+  state.storyEventFlags.push(structuredClone(script.storyEvents.find((entry) => entry.label === '首次告白')!));
   const second = buildCacheFriendlyParts(deriveChatContext(script, state, script.npcs[0], '这里是？'));
   assert.equal(first.fixed, second.fixed);
   assert.equal(second.snapshot.npc.indicators.affection, 22);

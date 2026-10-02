@@ -17,13 +17,13 @@
     "id": "confession", "intent": "玩家首次明确表达喜欢苏念", "trigger": "semantic", "once": true, "priority": 8,
     "exclusiveGroup": "affection-bonus", "keywords": ["喜欢你", "想见你"],
     "negativeExamples": ["喜欢这款游戏", "我喜欢这张截图"],
-    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 7 }, { "type": "addIndicatorTag", "id": "relationshipTags", "tag": "曾被表白" }],
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 7 }, { "type": "addIndicatorTag", "id": "relationshipTags", "tag": "曾被表白" }, { "type": "recordStoryEvent", "eventId": "6a541eba-a918-4a7d-b7b6-17b04715fed0" }],
     "replyCue": { "applied": "苏念会短暂宕机、转移话题，不会立刻作出承诺。" },
     "narration": "你坦白了心意，苏念一时不知道如何回答。"
   },
   {
     "id": "confession-again", "intent": "再次认真表达喜欢苏念", "trigger": "semantic", "priority": 7,
-    "exclusiveGroup": "affection-bonus", "when": { "completedEvent": "confession" },
+    "exclusiveGroup": "affection-bonus", "when": { "storyEvent": "6a541eba-a918-4a7d-b7b6-17b04715fed0" },
     "effects": [{ "type": "changeIndicator", "id": "affection", "by": 3 }],
     "replyCue": { "applied": "她记得之前的告白，不会像第一次那样完全无措。" }
   },
@@ -66,7 +66,7 @@
     "candidateWhen": { "indicator": { "id": "metInPerson", "eq": true } },
     "when": { "indicator": { "id": "metInPerson", "eq": true } },
     "positiveExamples": ["你练过剑道吗？"],
-    "effects": [{ "type": "setFlag", "flag": "knows-kendo" }, { "type": "changeIndicator", "id": "affection", "by": 4 }],
+    "effects": [{ "type": "recordStoryEvent", "eventId": "02401204-0c1d-4e3d-a0eb-9da08e994bb4" }, { "type": "changeIndicator", "id": "affection", "by": 4 }],
     "narration": "她有些意外，终于承认练剑道很多年。"
   },
   {

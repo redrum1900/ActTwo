@@ -7,6 +7,6 @@
   ] },
   { "id": "her-home", "name": "苏念家中", "description": "书架旁立着练习用的竹剑。她不再需要隔着屏幕逞强。", "interactionMode": "in-person", "visibleWhen": { "indicator": { "npcId": "su-nian", "id": "visitedHerHome", "eq": true } }, "spots": [], "items": [
     { "item": "old-photo", "hidden": false, "takeWhen": { "indicator": { "npcId": "su-nian", "id": "affection", "gte": 75 } }, "blockedHint": "苏念还不愿意让你带走这张照片。" },
-    { "item": "practice-note", "hidden": true, "discoverWhen": { "all": [{ "flag": "knows-kendo" }, { "hasItem": { "owner": "player", "item": "game-screenshot" } }] }, "takeWhen": { "indicator": { "npcId": "su-nian", "id": "affection", "gte": 85 } }, "blockedHint": "这本笔记对她很重要，先继续了解她吧。" }
+    { "item": "practice-note", "hidden": true, "discoverWhen": { "all": [{ "storyEvent": "02401204-0c1d-4e3d-a0eb-9da08e994bb4" }, { "hasItem": { "owner": "player", "item": "game-screenshot" } }] }, "takeWhen": { "indicator": { "npcId": "su-nian", "id": "affection", "gte": 85 } }, "blockedHint": "这本笔记对她很重要，先继续了解她吧。" }
   ] }
 ]

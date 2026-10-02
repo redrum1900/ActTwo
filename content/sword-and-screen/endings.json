@@ -1,3 +1,3 @@
 [
-  { "id": "real-me", "name": "真实的我", "description": "苏念愿意坦然分享她的真实生活。", "hidden": true, "condition": { "all": [{ "indicator": { "npcId": "su-nian", "id": "visitedHerHome", "eq": true } }, { "indicator": { "npcId": "su-nian", "id": "affection", "gte": 90 } }, { "flag": "knows-kendo" }] } }
+  { "id": "real-me", "name": "真实的我", "description": "苏念愿意坦然分享她的真实生活。", "hidden": true, "condition": { "all": [{ "indicator": { "npcId": "su-nian", "id": "visitedHerHome", "eq": true } }, { "indicator": { "npcId": "su-nian", "id": "affection", "gte": 90 } }, { "storyEvent": "02401204-0c1d-4e3d-a0eb-9da08e994bb4" }] } }
 ]

@@ -10,7 +10,7 @@
   },
   {
     "id": "restaurant", "name": "初次见面",
-    "when": { "all": [{ "indicator": { "id": "metInPerson", "eq": true } }, { "indicator": { "id": "visitedHerHome", "eq": false } }, { "not": { "flag": "knows-kendo" } }] },
+    "when": { "all": [{ "indicator": { "id": "metInPerson", "eq": true } }, { "indicator": { "id": "visitedHerHome", "eq": false } }, { "not": { "storyEvent": "02401204-0c1d-4e3d-a0eb-9da08e994bb4" } }] },
     "content": "你们第一次面对面，在老街饭店二楼靠窗、暖黄灯光和轻微餐具声里。她练习剑道多年，但尚未主动坦白这件事。她话少了许多，熟悉的调侃只在放松时偶尔出现；她并非突然变了，而是面对真实的人需要更多勇气。刚落座先看菜单或杯子，说话前轻轻吸气，句子会中途改口；尴尬时抿水、摆弄餐具、低头微笑。谈共同游戏或剑道时语速和眼神逐渐稳定。她想确认对方理解她，也怕沉默被误读；玩家给她时间、不催促，她更愿意分享并主动提问。声音比线上轻，放松后才露出熟悉的锋利。可以谈见面和共同经历；剑道秘密仅在被询问或已经发现后坦承，不提前介绍家中收藏。"
   },
   {
@@ -25,7 +25,7 @@
   },
   {
     "id": "restaurant-after-kendo", "name": "初次见面 · 剑道已知",
-    "when": { "all": [{ "indicator": { "id": "metInPerson", "eq": true } }, { "indicator": { "id": "visitedHerHome", "eq": false } }, { "flag": "knows-kendo" }] },
+    "when": { "all": [{ "indicator": { "id": "metInPerson", "eq": true } }, { "indicator": { "id": "visitedHerHome", "eq": false } }, { "storyEvent": "02401204-0c1d-4e3d-a0eb-9da08e994bb4" }] },
     "content": "此刻在老街饭店二楼靠窗第一次面对面。她练习剑道多年，你已知道这件事。她在线上锋利、爱逞强，在现实里却话少、紧张，并非变了一个人。她先看菜单或杯子，开口前轻吸气，句子可能改口；尴尬时抿水、摆弄餐具、笑一下又低头。被理解这段经历后她会更主动谈训练，同时观察你是否尊重这部分生活。共同游戏的回忆让她找回熟悉感。她想确认真实的自己也被理解，怕沉默被误解；被给足时间后会主动提问。语气轻，放松时露出熟悉的调侃；不提前透露家中收藏或未发生的互动。"
   },
   {

@@ -219,7 +219,7 @@ test('hidden discovery and taking have separate gates', () => {
   state = searchLocation(game, state).state;
   assert.deepEqual(makeView(game, state).location?.items.map((item) => item.id), ['old-photo']);
   assert.equal(takeLocationItem(game, state, 'old-photo').applied, false);
-  state.flags.push('knows-kendo');
+  state.storyEventFlags.push(structuredClone(game.storyEvents.find((entry) => entry.label === '知道剑道秘密')!));
   state = searchLocation(game, state).state;
   assert.ok(makeView(game, state).location?.items.some((item) => item.id === 'practice-note'));
   assert.equal(state.itemStates['practice-note'].owner, 'location:her-home');

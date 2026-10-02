@@ -10,6 +10,8 @@ test('blank creator package assembles to a playable story with one character', (
   assert.equal(script.npcs.length, 1);
   assert.equal(script.npcs[0].initialLocationId, script.startLocation);
   assert.deepEqual(script.periods, ['白天', '下午', '晚上']);
+  assert.deepEqual(script.storyEvents, []);
+  assert.deepEqual(JSON.parse(parts['manifest.json']).storyEvents, []);
   assert.ok(script.contentHash);
 });
 
@@ -20,6 +22,7 @@ test('sample story can be copied under another immutable story ID', () => {
   assert.equal(script.title, '我的改编');
   assert.equal(script.npcs[0].id, 'su-nian');
   assert.equal(script.events.length, loadScript('sword-and-screen').events.length);
+  assert.deepEqual(script.storyEvents, loadScript('sword-and-screen').storyEvents);
 });
 
 test('malformed or broken sections show their path and cannot publish', () => {

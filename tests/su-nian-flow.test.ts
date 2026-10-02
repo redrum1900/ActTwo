@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, makeView } from '../packages/engine/src/index.js';
+import { applyEvent, createInitialState, evaluateCondition, makeView } from '../packages/engine/src/index.js';
 import { settleWorld } from '../packages/engine/src/activity-log.js';
 import { contentHashOf, listScripts, loadScript } from '../packages/script/src/index.js';
 
@@ -22,6 +22,19 @@ test('Su Nian moves through the online, restaurant and home scenes by rules', ()
   const home = settleWorld(script, met, nearHome, { kind: 'chat', summary: '交谈', npcId: 'su-nian' }).state;
   assert.equal(home.npcLocations?.['su-nian'], 'her-home');
   assert.equal(makeView(script, home).locations.some((entry) => entry.id === 'her-home'), true);
+});
+
+test('Su Nian confession records a reusable story event while once stays internal', () => {
+  const script = loadScript('sword-and-screen');
+  const initial = createInitialState(script, { name: '阿言' });
+  const first = applyEvent(script, initial, 'confession');
+  assert.equal(first.applied, true);
+  assert.equal(first.state.storyEventFlags.length, 1);
+  assert.equal(first.state.storyEventFlags[0].label, '首次告白');
+  assert.equal(first.state.completedEvents.includes('confession'), true);
+  assert.equal(applyEvent(script, first.state, 'confession-again').applied, true);
+  const again = script.events.find((entry) => entry.id === 'confession-again')!;
+  assert.equal(evaluateCondition(again.when, first.state, script), true);
 });
 
 test('catalog contains only the current Su Nian story', () => {

@@ -9,6 +9,24 @@ test('a content package loads as one game script', () => {
   assert.equal(script.locations.length, 3);
   assert.equal(script.npcs.length, 1);
   assert.ok(script.events.length > 0);
+  assert.ok(script.storyEvents.some((entry) => entry.label === '首次告白'));
+});
+
+test('story event definitions and references are validated before publishing', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.storyEvents = [...script.storyEvents, { id: script.storyEvents[0].id, label: '重复', detail: '' }];
+  assert.match(validateScript(script).join('；'), /剧情事件存在重复 ID/);
+  script.storyEvents = script.storyEvents.slice(0, -1);
+  script.storyEvents[0].label = '';
+  assert.match(validateScript(script).join('；'), /剧情事件.*名称/);
+  script.storyEvents[0].label = '有效名称';
+  script.storyEvents[0].detail = 42 as unknown as string;
+  assert.match(validateScript(script).join('；'), /剧情事件.*详情/);
+  script.storyEvents[0].detail = '';
+  script.endings[0].condition = { storyEvent: 'missing-event' };
+  assert.match(validateScript(script).join('；'), /图鉴.*未知剧情事件 missing-event/);
+  script.events[0].effects = [{ type: 'recordStoryEvent', eventId: 'missing-event' }];
+  assert.match(validateScript(script).join('；'), /事件.*未知剧情事件 missing-event/);
 });
 
 test('validation rejects references to items that do not exist', () => {

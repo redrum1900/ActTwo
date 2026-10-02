@@ -12,7 +12,7 @@ test('new story package loads location access gates and optional player parts', 
   mkdirSync(npc, { recursive: true });
   const put = (file: string, value: unknown) => writeFileSync(path.join(game, file), JSON.stringify(value));
   try {
-    put('manifest.json', { id: 'fixture', version: '1.0.0', title: 'Fixture', startLocation: 'screen', periods: ['夜晚'] });
+    put('manifest.json', { id: 'fixture', version: '1.0.0', title: 'Fixture', startLocation: 'screen', periods: ['夜晚'], storyEvents: [] });
     put('player-form.json', []);
     put('items.json', []);
     put('locations.json', [{ id: 'screen', name: '电脑上', description: '', interactionMode: 'online',

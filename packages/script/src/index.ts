@@ -130,6 +130,8 @@ export function normalizeScriptReferences(script: GameScript): void {
 
 export function validateScript(script: GameScript): string[] {
   const errors: string[] = [];
+  const storyEvents = Array.isArray(script.storyEvents) ? script.storyEvents : [];
+  if (!Array.isArray(script.storyEvents)) errors.push('剧情事件应为数组');
   if (!script.id || !safeId.test(script.id)) errors.push('剧本 ID 不合法');
   if (!script.version) errors.push('缺少版本号');
   if (!script.periods?.length) errors.push('至少需要一个时段');
@@ -145,6 +147,15 @@ export function validateScript(script: GameScript): string[] {
   unique('NPC', script.npcs.map((npc) => npc.id));
   unique('地点', script.locations.map((location) => location.id));
   unique('事件', script.events.map((event) => event.id));
+  unique('剧情事件', storyEvents.map((event) => event?.id));
+  const storyEventIds = new Set(storyEvents.map((event) => event?.id));
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  for (const [index, event] of storyEvents.entries()) {
+    if (!event || typeof event !== 'object') { errors.push(`剧情事件 ${index + 1} 应为对象`); continue; }
+    if (!uuid.test(event.id)) errors.push(`剧情事件 ${index + 1} ID 不是 UUID`);
+    if (typeof event.label !== 'string' || !event.label.trim()) errors.push(`剧情事件 ${event.id} 名称不能为空`);
+    if (typeof event.detail !== 'string') errors.push(`剧情事件 ${event.id} 详情应为文本`);
+  }
   const initialOwners = new Map<string, string>();
   for (const npc of script.npcs) for (const item of npc.initialItems) {
     if (initialOwners.has(item)) errors.push(`道具 ${item} 初始归属重复：${initialOwners.get(item)} 与 NPC ${npc.id}`);
@@ -191,6 +202,7 @@ export function validateScript(script: GameScript): string[] {
     if ('npcTag' in condition && !npcIds.has(condition.npcTag.npc)) errors.push(`${label}引用未知 NPC ${condition.npcTag.npc}`);
     if ('unlockedLocation' in condition && !locationIds.has(condition.unlockedLocation)) errors.push(`${label}引用未知地点 ${condition.unlockedLocation}`);
     if ('completedEvent' in condition && !script.events.some((entry) => entry.id === condition.completedEvent)) errors.push(`${label}引用未知事件 ${condition.completedEvent}`);
+    if ('storyEvent' in condition && !storyEventIds.has(condition.storyEvent)) errors.push(`${label}引用未知剧情事件 ${condition.storyEvent}`);
     if ('location' in condition && !locationIds.has(condition.location)) errors.push(`${label}引用未知地点 ${condition.location}`);
     if ('discoveredNpc' in condition && !npcIds.has(condition.discoveredNpc)) errors.push(`${label}引用未知 NPC ${condition.discoveredNpc}`);
     if ('stat' in condition && !statIds.has(`${condition.stat.npc ? 'npc' : condition.stat.scope ?? 'world'}:${condition.stat.id}`)) errors.push(`${label}引用未知数值 ${condition.stat.id}`);
@@ -232,6 +244,7 @@ export function validateScript(script: GameScript): string[] {
     if ('from' in effect && typeof effect.from === 'string' && effect.from.startsWith('npc:') && !npcIds.has(effect.from.slice(4))) errors.push(`${label}引用未知持有者 ${effect.from}`);
     if (effect.type === 'unlockLocation' && !locationIds.has(effect.location)) errors.push(`${label}引用未知地点 ${effect.location}`);
     if (effect.type === 'recordGallery' && !(effect.kind === 'ending' ? script.endings : script.achievements).some((entry) => entry.id === effect.id)) errors.push(`${label}引用未知图鉴 ${effect.id}`);
+    if (effect.type === 'recordStoryEvent' && !storyEventIds.has(effect.eventId)) errors.push(`${label}引用未知剧情事件 ${effect.eventId}`);
   };
   for (const npc of script.npcs) {
     if (!locationIds.has(npc.initialLocationId)) errors.push(`NPC ${npc.id} 初始地点不存在 ${npc.initialLocationId}`);

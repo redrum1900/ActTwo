@@ -8,5 +8,9 @@
   "cover": "剑",
   "theme": { "accent": "#9b668b" },
   "startLocation": "player-home",
+  "storyEvents": [
+    { "id": "6a541eba-a918-4a7d-b7b6-17b04715fed0", "label": "首次告白", "detail": "玩家第一次认真向苏念表达喜欢。" },
+    { "id": "02401204-0c1d-4e3d-a0eb-9da08e994bb4", "label": "知道剑道秘密", "detail": "苏念承认自己练习剑道多年。" }
+  ],
   "periods": ["夜晚", "深夜", "白天", "傍晚"]
 }
