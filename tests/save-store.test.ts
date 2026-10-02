@@ -70,3 +70,20 @@ test('auto-save and gallery awards commit atomically and survive manual loads', 
   assert.deepEqual(store.getGallery('guest-a', script.id), [{ kind: 'achievement', id: 'first-clue' }]);
   store.close();
 });
+
+test('story event snapshots survive manual loads and stale revisions cannot overwrite them', () => {
+  const store = createSaveStore(':memory:');
+  try {
+    const initial = createInitialState(script, { name: '甲' });
+    const first = store.putAuto('guest-a', script.id, initial);
+    const recorded = structuredClone(initial);
+    recorded.storyEventFlags.push(structuredClone(script.storyEvents[0]));
+    store.updateAuto('guest-a', script.id, first.revision, recorded);
+    store.saveManual('guest-a', script.id, 1, '告白后', recorded);
+    assert.throws(() => store.updateAuto('guest-a', script.id, first.revision, initial), /存档已变化/);
+    assert.deepEqual(store.getAuto('guest-a', script.id)?.state.storyEventFlags, [script.storyEvents[0]]);
+    store.putAuto('guest-a', script.id, initial);
+    store.loadManual('guest-a', script.id, 1);
+    assert.deepEqual(store.getAuto('guest-a', script.id)?.state.storyEventFlags, [script.storyEvents[0]]);
+  } finally { store.close(); }
+});

@@ -82,3 +82,35 @@ test('no eligible semantic rules means only one plain streamed generation', asyn
     assert.equal(result.reply, '这里是电脑上的聊天窗口。');
   } finally { globalThis.fetch = original; }
 });
+
+test('a proposed confession records a story event only after the settled reply succeeds', async () => {
+  const state = createInitialState(script, {});
+  const adapter = { mode: 'demo' as const,
+    generate: async () => ({ message: '我听见了。', proposedEventIds: ['confession'] }),
+    rewrite: async (_context: unknown, draft: string) => draft };
+  const first = await runChat(script, state, 'su-nian', '我喜欢你', adapter);
+  const eventId = script.storyEvents.find((entry) => entry.label === '首次告白')!.id;
+  assert.deepEqual(state.storyEventFlags, []);
+  assert.deepEqual(first.state.storyEventFlags.map((entry) => entry.id), [eventId]);
+  const second = await runChat(script, first.state, 'su-nian', '我还是喜欢你', {
+    ...adapter, generate: async () => ({ message: '我记得。', proposedEventIds: ['confession-again'] }),
+  });
+  assert.deepEqual(second.state.storyEventFlags.map((entry) => entry.id), [eventId]);
+  assert.ok(second.appliedEvents.some((entry) => entry.id === 'confession-again'));
+});
+
+test('rejected proposal and failed final reply leave story event flags untouched', async () => {
+  const state = createInitialState(script, {});
+  const rejected = await runChat(script, state, 'su-nian', '你好', {
+    mode: 'demo', generate: async () => ({ message: '你好。', proposedEventIds: ['ask-kendo'] }),
+    rewrite: async (_context, draft) => draft,
+  });
+  assert.deepEqual(rejected.state.storyEventFlags, []);
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => ++calls === 1 ? response('{"proposedEventIds":["confession"]}') : response('[2]');
+  try {
+    await assert.rejects(runChat(script, state, 'su-nian', '我喜欢你', createChatAdapter({ apiKey: 'test' })));
+    assert.deepEqual(state.storyEventFlags, []);
+  } finally { globalThis.fetch = original; }
+});
