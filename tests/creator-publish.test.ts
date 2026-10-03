@@ -13,18 +13,17 @@ test('draft stays private, published snapshot is playable, and deletion unlists 
   const projects = createProjectStore(creators.db);
   const reviews = createReviewStore(creators.db, projects);
   const saves = createSaveStore(':memory:');
-  const author = creators.register('author', 'author-password-1').account.id;
+  const authorSession = creators.register('author', 'author-password-1');
+  const author = authorSession.account.id;
   const admin = creators.createAdmin('moderator', 'moderator-password-1').id;
   projects.create(author, 'public-story', '公开故事');
-  const server = createApp(saves, createChatAdapter({}), { scripts: createScriptRepository(projects) }).listen(0);
+  const server = createApp(saves, createChatAdapter({}), { scripts: createScriptRepository(projects), creatorStore: creators }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  let cookie = '';
+  const cookie = `gd_creator=${authorSession.token}`;
   const request = async (path: string, method = 'GET', body?: unknown) => {
     const response = await fetch(`${base}${path}`, { method, headers: { Cookie: cookie, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body) });
-    const received = response.headers.get('set-cookie');
-    if (received?.startsWith('gd_guest=')) cookie = received.split(';')[0];
     return { status: response.status, data: await response.json() as any };
   };
   try {
@@ -39,6 +38,6 @@ test('draft stays private, published snapshot is playable, and deletion unlists 
     assert.equal((await request('/api/games/public-story')).data.title, '公开故事');
     projects.delete(author, 'public-story');
     assert.equal((await request('/api/catalog')).data.games.some((game: any) => game.id === 'public-story'), false);
-    assert.ok(saves.getAuto(cookie.slice(9), 'public-story'));
+    assert.ok(saves.getAuto(author, 'public-story'));
   } finally { server.close(); creators.close(); saves.close(); }
 });

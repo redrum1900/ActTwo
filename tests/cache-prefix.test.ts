@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCacheFriendlyParts } from '../apps/api/src/ai-adapter.js';
+import { buildAIState, buildCacheFriendlyParts } from '../apps/api/src/ai-adapter.js';
 import { deriveChatContext } from '../apps/api/src/chat-service.js';
 import { loadScript } from '../packages/script/src/index.js';
 import { createInitialState } from '../packages/engine/src/index.js';
@@ -24,4 +24,15 @@ test('fixed prompt is unchanged by affection, inventory and once-rule eligibilit
   assert.equal(first.fixed.includes('charm-gift'), false);
   assert.equal(JSON.stringify(first).includes('父母经常不在'), false);
   assert.equal(first.fixed.includes('"effects"'), false);
+});
+
+test('AI inventory summarizes item ownership without item tags', () => {
+  const script = loadScript('sword-and-screen');
+  const state = createInitialState(script, {});
+  state.itemStates['practice-note'].owner = 'player';
+  state.playerItems['practice-note'] = 1;
+  const context = deriveChatContext(script, state, script.npcs[0], '你好');
+  const inventory = buildAIState(context).player.inventory;
+  assert.equal(inventory.some(item => item.name === '训练笔记'), true);
+  assert.equal(inventory.every(item => !Object.hasOwn(item, 'tags')), true);
 });

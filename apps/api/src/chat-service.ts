@@ -3,9 +3,11 @@ import type { ChatMessage, EventDefinition, GameScript, GameState, NpcDefinition
 import { deriveNpcSnapshot, evaluateCondition, makeView, settlePlayerEvents } from '@game/engine';
 import { appendActivity, settleWorld } from '@game/engine/activity-log';
 import { compressMemory, selectMemory, planCompression } from './memory-policy.js';
+import type { AiAttribution } from './ai-audit.js';
 
 export interface CandidateEvent { id: string; intent: string; canApply: boolean; cue?: string; positiveExamples?: readonly string[]; negativeExamples?: readonly string[] }
 export interface ChatContext {
+  audit?: AiAttribution;
   turnId: string;
   script: GameScript;
   state: GameState;
@@ -27,7 +29,7 @@ export interface ChatAdapter {
   summarize?(context: ChatContext, messages: ChatMessage[]): Promise<string>;
 }
 
-export function deriveChatContext(script: GameScript, state: GameState, npc: NpcDefinition, text: string, turnId: string = randomUUID()): ChatContext {
+export function deriveChatContext(script: GameScript, state: GameState, npc: NpcDefinition, text: string, turnId: string = randomUUID(), audit?: AiAttribution): ChatContext {
   const candidates = script.events.filter((event) => event.npc === npc.id && event.trigger === 'semantic' &&
     (!event.once || !state.completedEvents.includes(event.id)) &&
     evaluateCondition(event.candidateWhen, state, script, npc.id)).map((event) => ({
@@ -36,12 +38,12 @@ export function deriveChatContext(script: GameScript, state: GameState, npc: Npc
       cue: evaluateCondition(event.when ?? event.condition, state, script, npc.id) ? event.replyCue?.applied : event.replyCue?.blocked,
       positiveExamples: event.positiveExamples, negativeExamples: event.negativeExamples,
     }));
-  return { turnId, script, state, npc, text, history: state.chats[npc.id] ?? [], candidates, appliedEvents: [], rejectedIds: [],
+  return { turnId, audit, script, state, npc, text, history: state.chats[npc.id] ?? [], candidates, appliedEvents: [], rejectedIds: [],
     preTurnPersona: deriveNpcSnapshot(script, state, npc.id).persona };
 }
 
 export async function runChat(script: GameScript, state: GameState, npcId: string, rawText: string, adapter: ChatAdapter,
-  options: { turnId?: string; onDraft?: (delta: string) => void; onStatus?: (text: string) => void } = {}) {
+  options: { turnId?: string; audit?: AiAttribution; onDraft?: (delta: string) => void; onStatus?: (text: string) => void } = {}) {
   const text = rawText.trim();
   if (!text || text.length > 2000) throw new Error('请输入 1–2000 字的消息');
   if (!makeView(script, state).npcs.some((npc) => npc.id === npcId)) throw new Error('此 NPC 当前不在场');
@@ -50,9 +52,9 @@ export async function runChat(script: GameScript, state: GameState, npcId: strin
   if (adapter.summarize && !selectMemory(state.chats[npcId] ?? [], state.memorySegments[npcId] ?? []).document &&
     planCompression(state.chats[npcId] ?? [], state.memorySegments[npcId] ?? [])) {
     options.onStatus?.('正在准备对话记忆…');
-    state = await compressMemory(deriveChatContext(script, state, npc, text, turnId), adapter.summarize);
+    state = await compressMemory(deriveChatContext(script, state, npc, text, turnId, options.audit), adapter.summarize);
   }
-  const base = deriveChatContext(script, state, npc, text, turnId);
+  const base = deriveChatContext(script, state, npc, text, turnId, options.audit);
   // Adapters with a judge settle first; generate then receives only confirmed facts.
   if (adapter.judge && base.candidates.some((entry) => entry.canApply)) options.onStatus?.('正在理解你的话…');
   const draft = adapter.judge

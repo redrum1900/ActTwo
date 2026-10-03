@@ -1,14 +1,30 @@
 export type Owner = 'player' | `npc:${string}` | `location:${string}`;
+export { compareConditionValue, pruneLegacyCondition, validCalendarDate } from './condition-value.js';
+
+export interface ValueComparison {
+  eq?: number | string | boolean;
+  ne?: number | string | boolean;
+  gt?: number | string;
+  gte?: number | string;
+  lt?: number | string;
+  lte?: number | string;
+  has?: string;
+  lacks?: string;
+  contains?: string;
+  notContains?: string;
+  length?: { eq?: number; gt?: number; gte?: number; lt?: number; lte?: number };
+}
 
 export type Condition =
   | { all: readonly Condition[] }
   | { any: readonly Condition[] }
   | { not: Condition }
-  | { hasItem: { owner: Owner; item: string; tags?: readonly string[] } }
+  | { hasItem: { owner: Owner; item: string } }
   | { stat: { npc?: string; scope?: 'player' | 'world'; id: string; gte?: number; lte?: number; eq?: number } }
-  | { indicator: { npcId?: string; id: string; gte?: number; lte?: number; eq?: number | string | boolean; ne?: number | string | boolean; has?: string; lacks?: string } }
-  | { playerIndicator: { id: string; gte?: number; lte?: number; eq?: number | string | boolean; ne?: number | string | boolean; has?: string; lacks?: string } }
-  | { playerField: { id: string; eq?: string; has?: string } }
+  | { indicator: { npcId?: string; id: string } & ValueComparison }
+  | { playerIndicator: { id: string } & ValueComparison }
+  | { storyIndicator: { id: string } & ValueComparison }
+  | { playerField: { id: string } & ValueComparison }
   | { npcLocation: { npcId: string; locationId: string } }
   | { flag: string }
   | { storyEvent: string }
@@ -25,20 +41,20 @@ export type Effect =
   | { type: 'removeItem'; from: Owner; item: string }
   | { type: 'transferItem'; from: Owner; to: Owner; item: string }
   | { type: 'changeStat'; scope: 'npc' | 'player' | 'world'; npc?: string; id: string; by: number }
-  | { type: 'changeIndicator'; target?: 'player' | `npc:${string}`; npcId?: string; id: string; by: number }
-  | { type: 'setIndicator'; target?: 'player' | `npc:${string}`; npcId?: string; id: string; value: IndicatorValue }
-  | { type: 'setIndicatorVisibility'; target?: 'player' | `npc:${string}`; npcId?: string; id: string; visible: boolean }
-  | { type: 'addIndicatorTag' | 'removeIndicatorTag'; target?: 'player' | `npc:${string}`; npcId?: string; id: string; tag: string }
+  | { type: 'changeIndicator'; target?: 'story' | 'player' | `npc:${string}`; npcId?: string; id: string; by: number }
+  | { type: 'setIndicator'; target?: 'story' | 'player' | `npc:${string}`; npcId?: string; id: string; value: IndicatorValue }
+  | { type: 'setIndicatorVisibility'; target?: 'story' | 'player' | `npc:${string}`; npcId?: string; id: string; visible: boolean }
+  | { type: 'addIndicatorTag' | 'removeIndicatorTag'; target?: 'story' | 'player' | `npc:${string}`; npcId?: string; id: string; tag: string }
   | { type: 'moveNpc'; target?: `npc:${string}`; locationId: string }
   | { type: 'setFlag'; flag: string }
   | { type: 'recordStoryEvent'; eventId: string }
+  | { type: 'removeStoryEvent'; eventId: string }
   | { type: 'discoverNpc'; npc: string }
   | { type: 'revealNpcItem'; npc: string; item: string }
   | { type: 'advanceTime' }
   | { type: 'addTag'; tag: string }
   | { type: 'removeTag'; tag: string }
   | { type: 'addNpcTag' | 'removeNpcTag'; npc: string; tag: string }
-  | { type: 'addItemTag' | 'removeItemTag'; item: string; tag: string }
   | { type: 'discoverItem'; item: string }
   | { type: 'revealPlayerItem'; npc: string; item: string }
   | { type: 'unlockLocation'; location: string }
@@ -47,7 +63,7 @@ export type Effect =
 export interface FieldDefinition {
   id: string;
   label: string;
-  type: 'input' | 'date' | 'radio' | 'checkbox' | 'select';
+  type: 'input' | 'textarea' | 'date' | 'radio' | 'checkbox' | 'select';
   default?: string | string[];
   options?: readonly { value: string; label: string }[];
   required?: boolean;
@@ -65,12 +81,14 @@ export interface StatDefinition {
   visible?: boolean;
 }
 
-export type IndicatorDefinition =
+export type IndicatorDefinition = (
   | { id: string; name: string; type: 'number'; initial: number; min: number; max: number; playerVisible: boolean }
   | { id: string; name: string; type: 'enum'; initial: string; options: readonly string[]; playerVisible: boolean }
   | { id: string; name: string; type: 'boolean'; initial: boolean; playerVisible: boolean; writeOnceTrue?: boolean }
   | { id: string; name: string; type: 'tags'; initial: readonly string[]; playerVisible: boolean }
-  | { id: string; name: string; type: 'text'; initial: string; playerVisible: boolean };
+  | { id: string; name: string; type: 'text'; initial: string; playerVisible: boolean }
+  | { id: string; name: string; type: 'date'; initial: string; playerVisible: boolean }
+) & { description?: string; systemRole?: 'onceRules' };
 
 export type IndicatorValue = number | string | boolean | string[];
 export interface NpcIndicatorState { value: IndicatorValue; playerVisible: boolean }
@@ -97,7 +115,6 @@ export interface LocationDefinition {
   spots: readonly SpotDefinition[];
   items?: readonly {
     item: string;
-    hidden?: boolean;
     discoverWhen?: Condition | null;
     takeWhen?: Condition | null;
     blockedHint?: string;
@@ -121,7 +138,7 @@ export interface NpcDefinition {
   portrait?: string;
   accent?: string;
   rules?: readonly Omit<EventDefinition, 'npc'>[];
-  lore?: readonly { id: string; keywords: readonly string[]; content: string; when?: Condition | null }[];
+  lore?: readonly { id: string; name?: string; type?: 'always' | 'triggered'; keywords: readonly string[]; content: string; when?: Condition | null }[];
 }
 
 export interface EventDefinition {
@@ -133,6 +150,7 @@ export interface EventDefinition {
   keywords?: readonly string[];
   priority?: number;
   once?: boolean;
+  editorGroup?: string;
   trigger: 'semantic' | 'automatic' | 'action';
   positiveExamples?: readonly string[];
   negativeExamples?: readonly string[];
@@ -156,8 +174,6 @@ export interface ItemDefinition {
   image?: string;
   description?: string;
   detail?: string;
-  initialTags?: readonly string[];
-  hiddenTags?: readonly string[];
   variants?: readonly { when: Condition; description?: string; detail?: string }[];
 }
 
@@ -199,6 +215,7 @@ export interface GameScript {
   periods: readonly string[];
   playerFields: readonly FieldDefinition[];
   playerIndicators?: readonly IndicatorDefinition[];
+  storyIndicators?: readonly IndicatorDefinition[];
   playerRules?: readonly PlayerRuleDefinition[];
   stats: readonly StatDefinition[];
   items: readonly ItemDefinition[];
@@ -239,7 +256,6 @@ export interface ActivityEntry {
 
 export interface ItemRuntime {
   owner: Owner | null;
-  tags: string[];
   discovered: boolean;
 }
 
@@ -286,6 +302,7 @@ export interface GameState {
   npcStats: Record<string, Record<string, number>>;
   npcIndicators?: Record<string, Record<string, NpcIndicatorState>>;
   playerIndicators?: Record<string, NpcIndicatorState>;
+  storyIndicators?: Record<string, NpcIndicatorState>;
   npcLocations?: Record<string, string>;
   flags: string[];
   storyEventFlags: StoryEventDefinition[];

@@ -46,7 +46,11 @@ export function createPlayerNavigation(host: NavigationHost) {
 }
 
 export function usePlayerRoute(): [PlayerRoute, (route: PlayerRoute, replace?: boolean) => void] {
-  const navigation = useMemo(() => createPlayerNavigation(window), []);
-  const route = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot);
+  const navigation = useMemo(() => createPlayerNavigation(typeof window === 'undefined' ? {
+    location: { pathname: '/' },
+    history: { pushState() {}, replaceState() {} },
+    addEventListener() {}, removeEventListener() {},
+  } : window), []);
+  const route = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot, (): PlayerRoute => ({ kind: 'catalog' }));
   return [route, navigation.navigate];
 }

@@ -7,7 +7,115 @@ import { patchManifest, patchLocation, newLocationId, changePeriod, movePeriod, 
   newStoryEvent, patchStoryEvent, removeStoryEvent } from '../apps/web/src/creator/section-forms.js';
 import { setStoryEventGate, setRecordedStoryEvents } from '../apps/web/src/creator/story-event-rule.js';
 import { referencedStoryEventIds } from '../apps/web/src/creator/story-event-references.js';
-import { newEntryId, patchEntryById, addEntry, removeEntry, addEntryTag, removeEntryTag } from '../apps/web/src/creator/section-forms.js';
+import { newEntryId, patchEntryById, addEntry, removeEntry } from '../apps/web/src/creator/section-forms.js';
+import * as locationForms from '../apps/web/src/creator/section-forms.js';
+
+test('NPC basic form patches preserve hidden fields and item visibility states', () => {
+  const forms = locationForms as typeof locationForms & {
+    patchNpcBase?: (content: string, patch: Record<string, unknown>) => string;
+    addNpcInitialItems?: (content: string, itemIds: string[]) => string;
+    removeNpcInitialItem?: (content: string, itemId: string) => string;
+    setNpcItemVisibility?: (content: string, itemId: string, condition: unknown) => string;
+  };
+  const original = JSON.stringify({ id: 'su-nian', name: '苏念', portrait: 'old.png', accent: '#993366',
+    initialItems: ['old'], itemVisibility: {}, custom: { kept: true } });
+  const renamed = forms.patchNpcBase?.(original, { name: '新名字', description: '多行\n描述' });
+  assert.ok(renamed);
+  assert.deepEqual(JSON.parse(renamed), { id: 'su-nian', name: '新名字', description: '多行\n描述', portrait: 'old.png',
+    accent: '#993366', initialItems: ['old'], itemVisibility: {}, custom: { kept: true } });
+  const added = forms.addNpcInitialItems?.(renamed, ['photo', 'note', 'photo']);
+  assert.deepEqual(JSON.parse(added ?? 'null').initialItems, ['old', 'photo', 'note']);
+  assert.deepEqual(JSON.parse(added ?? 'null').itemVisibility, { photo: null, note: null });
+  const conditioned = forms.setNpcItemVisibility?.(added!, 'photo', { storyEvent: 'met' });
+  assert.deepEqual(JSON.parse(conditioned ?? 'null').itemVisibility, { photo: { storyEvent: 'met' }, note: null });
+  const hidden = forms.setNpcItemVisibility?.(conditioned!, 'photo', undefined);
+  assert.deepEqual(JSON.parse(hidden ?? 'null').itemVisibility, { note: null });
+  const removed = forms.removeNpcInitialItem?.(hidden!, 'note');
+  assert.deepEqual(JSON.parse(removed ?? 'null').initialItems, ['old', 'photo']);
+  assert.deepEqual(JSON.parse(removed ?? 'null').itemVisibility, {});
+});
+
+test('NPC basic form uses named options and item tabs without showing internal fields', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'npcs/su-nian/base.json', onChange: () => {},
+    content: JSON.stringify({ id: 'su-nian', name: '苏念', description: '第一行\n第二行', initialLocationId: 'home',
+      initialItems: ['photo'], itemVisibility: { photo: { storyEvent: 'met' } }, portrait: '', accent: '#993366' }),
+    conditionSources: { storyEvents: [{ id: 'met', label: '见面' }], items: [{ id: 'photo', name: '照片' }],
+      npcs: [], locations: [{ id: 'home', name: '家中' }], playerIndicators: [], periods: [], playerFields: [], rules: [] } }));
+  assert.match(html, /家中/);
+  assert.match(html, /简介 \/ 描述/);
+  assert.match(html, /<textarea[^>]*>第一行\n第二行<\/textarea>/);
+  assert.match(html, /NPC 道具|初始道具/);
+  assert.match(html, /道具列表/);
+  assert.match(html, /可见条件/);
+  assert.match(html, /见面/);
+  assert.doesNotMatch(html, /唯一 ID|添加字段|portrait|accent/);
+});
+
+test('world book keyword input splits commas and deduplicates names', () => {
+  const forms = locationForms as typeof locationForms & { splitLoreKeywords?: (text: string, existing: string[]) => string[] };
+  assert.deepEqual(forms.splitLoreKeywords?.(' 剑道, 竹剑， 训练 ,,剑道 ', ['家']), ['家', '剑道', '竹剑', '训练']);
+});
+
+test('world book uses left tabs, readable names and content textarea without IDs', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'npcs/su-nian/lore.json', onChange: () => {},
+    content: JSON.stringify([{ id: 'kendo', name: '剑道背景', type: 'triggered', keywords: ['剑道'], content: '练习多年' }]) }));
+  assert.match(html, /creator-side-entry-layout/);
+  assert.match(html, /剑道背景/);
+  assert.match(html, /<span>类型<\/span>/);
+  assert.match(html, /触发/);
+  assert.match(html, /触发词/);
+  assert.match(html, /<textarea[^>]*>练习多年<\/textarea>/);
+  assert.doesNotMatch(html, /唯一 ID|添加字段|编辑完整结构/);
+});
+
+test('persona helpers protect common while preserving IDs and advanced fields', () => {
+  const forms = locationForms as typeof locationForms & {
+    addPersona?: (content: string, common?: boolean) => string;
+    patchPersona?: (content: string, id: string, patch: Record<string, unknown>) => string;
+    removePersona?: (content: string, id: string) => string;
+  };
+  const original = JSON.stringify([{ id: 'online', name: '线上', content: '旧内容', custom: 7 },
+    { id: 'common', name: '通用', content: '基础' }]);
+  const patched = forms.patchPersona?.(original, 'online', { name: '屏幕两端', when: { storyEvent: 'met' } });
+  assert.deepEqual(JSON.parse(patched ?? 'null')[0], { id: 'online', name: '屏幕两端', content: '旧内容', custom: 7,
+    when: { storyEvent: 'met' } });
+  assert.throws(() => forms.patchPersona?.(original, 'common', { when: { storyEvent: 'met' } }), /通用/);
+  assert.throws(() => forms.removePersona?.(original, 'common'), /通用/);
+  const added = JSON.parse(forms.addPersona?.(original) ?? 'null');
+  assert.match(added.at(-1).id, /^[0-9a-f-]{36}$/);
+  assert.equal(added.at(-1).content, '');
+  assert.deepEqual(JSON.parse(forms.removePersona?.(original, 'online') ?? 'null'), [{ id: 'common', name: '通用', content: '基础' }]);
+});
+
+test('persona form pins common first and offers typed conditions only for other entries', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'npcs/su-nian/personas.json', onChange: () => {},
+    content: JSON.stringify([{ id: 'online', name: '屏幕两端', content: '保持距离', when: { storyEvent: 'met' } },
+      { id: 'common', name: '通用', content: '基础内容' }]),
+    conditionSources: { storyEvents: [{ id: 'met', label: '见面' }], items: [], npcs: [{ id: 'su-nian', name: '苏念' }],
+      locations: [], playerIndicators: [], periods: [], playerFields: [], rules: [] } }));
+  assert.match(html, /creator-side-entry-layout/);
+  assert.ok(html.indexOf('>通用</button>') < html.indexOf('>屏幕两端</button>'));
+  assert.match(html, /<textarea[^>]*>基础内容<\/textarea>/);
+  assert.doesNotMatch(html, /删除性格|唯一 ID|添加字段|生效条件/);
+});
+
+test('conditional persona edits conditions with the shared condition builder', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'npcs/su-nian/personas.json', onChange: () => {},
+    content: JSON.stringify([{ id: 'online', name: '屏幕两端', content: '保持距离', when: { storyEvent: 'met' } }]),
+    conditionSources: { storyEvents: [{ id: 'met', label: '见面' }], items: [], npcs: [{ id: 'su-nian', name: '苏念' }],
+      locations: [], playerIndicators: [], periods: [], playerFields: [], rules: [] } }));
+  assert.match(html, /生效条件/);
+  assert.match(html, /见面/);
+  assert.match(html, /创建通用/);
+});
+
+test('malformed NPC list entries stay in JSON mode instead of crashing form rendering', () => {
+  for (const path of ['npcs/su-nian/lore.json', 'npcs/su-nian/personas.json']) {
+    const html = renderToStaticMarkup(createElement(SectionEditor, { path, onChange: () => {}, content: '[null,{}]' }));
+    assert.match(html, /列表存在缺少 ID/);
+    assert.match(html, /aria-label="[^\"]+ JSON"/);
+  }
+});
 
 test('tabbed entries patch by stable ID and preserve unknown fields across deletion', () => {
   const first = { id: 'a', name: '第一项', description: '第一行\n第二行', variants: [{ when: { flag: 'old' } }] };
@@ -23,17 +131,6 @@ test('tabbed entries patch by stable ID and preserve unknown fields across delet
   assert.notEqual(id, newEntryId());
   assert.match(id, /^[0-9a-f-]{36}$/);
   assert.equal(JSON.parse(addEntry(original, { id, name: '第三项' }))[2].id, id);
-});
-
-test('item tags only add or remove without duplicate or field loss', () => {
-  const original = JSON.stringify([{ id: 'a', name: '道具', initialTags: ['旧'], hiddenTags: ['私有'] }]);
-  const added = addEntryTag(original, 'a', '旧');
-  assert.deepEqual(JSON.parse(added)[0].initialTags, ['旧']);
-  const next = addEntryTag(added, 'a', '新');
-  assert.deepEqual(JSON.parse(next)[0].initialTags, ['旧', '新']);
-  const removed = JSON.parse(removeEntryTag(next, 'a', '旧'))[0];
-  assert.deepEqual(removed.initialTags, ['新']);
-  assert.deepEqual(removed.hiddenTags, ['私有']);
 });
 
 test('reference scan identifies condition and effect IDs without matching unrelated text', () => {
@@ -87,6 +184,51 @@ test('location form edits preserve spots, items and other locations', () => {
     custom: true, description: '街角小店' });
   assert.deepEqual(updated[1], { id: 'home', name: '家中' });
   assert.notEqual(newLocationId(), newLocationId());
+});
+
+test('location item edits preserve other fields and reject a second initial placement', () => {
+  const forms = locationForms as typeof locationForms & {
+    addLocationPlacement?: (content: string, locationId: string, itemId: string) => string;
+    patchLocationPlacement?: (content: string, locationId: string, itemId: string, fields: Record<string, unknown>) => string;
+    removeLocationPlacement?: (content: string, locationId: string, itemId: string) => string;
+    availableLocationPlacementItems?: (content: string, items: { id: string; name: string }[], npcItems: string[]) => { id: string; name: string }[];
+  };
+  const original = JSON.stringify([{ id: 'home', spots: [{ id: 'desk' }], items: [] }, { id: 'cafe', items: [] }]);
+  const added = forms.addLocationPlacement?.(original, 'home', 'photo');
+  assert.ok(added, 'adding a location item should return updated content');
+  assert.deepEqual(JSON.parse(added)[0].items, [{ item: 'photo' }]);
+  assert.throws(() => forms.addLocationPlacement?.(added!, 'cafe', 'photo'), /已放置/);
+  const patched = forms.patchLocationPlacement?.(added!, 'home', 'photo', { discoverWhen: { storyEvent: 'met' }, blockedHint: '稍后再拿' });
+  assert.deepEqual(JSON.parse(patched ?? 'null')[0].items, [{ item: 'photo', discoverWhen: { storyEvent: 'met' }, blockedHint: '稍后再拿' }]);
+  const cleared = forms.patchLocationPlacement?.(patched!, 'home', 'photo', { discoverWhen: undefined });
+  assert.deepEqual(JSON.parse(cleared ?? 'null')[0].items, [{ item: 'photo', blockedHint: '稍后再拿' }]);
+  const removed = forms.removeLocationPlacement?.(cleared!, 'home', 'photo');
+  assert.deepEqual(JSON.parse(removed ?? 'null'), JSON.parse(original));
+  assert.deepEqual(forms.availableLocationPlacementItems?.(added!, [
+    { id: 'photo', name: '照片' }, { id: 'charm', name: '御守' }, { id: 'note', name: '笔记' },
+  ], ['charm']), [{ id: 'note', name: '笔记' }]);
+});
+
+test('location form shows one item tab with optional discovery and taking conditions', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'locations.json', onChange: () => {},
+    content: JSON.stringify([{ id: 'home', name: '家', spots: [], items: [{ item: 'photo', discoverWhen: { storyEvent: 'met' } }] }]),
+    conditionSources: { storyEvents: [{ id: 'met', label: '已经见面' }], items: [{ id: 'photo', name: '照片' }],
+      npcs: [], locations: [{ id: 'home', name: '家' }], playerIndicators: [], periods: [], playerFields: [], rules: [] } }));
+  assert.match(html, /地点道具/);
+  assert.match(html, /道具列表/);
+  assert.match(html, /照片/);
+  assert.match(html, /发现条件/);
+  assert.match(html, /获取条件/);
+  assert.match(html, /添加道具/);
+  assert.match(html, /已经见面/);
+});
+
+test('a newly added unsaved location is valid in its own item condition editor', () => {
+  const html = renderToStaticMarkup(createElement(SectionEditor, { path: 'locations.json', onChange: () => {},
+    content: JSON.stringify([{ id: 'new-home', name: '新家', spots: [], items: [{ item: 'photo', takeWhen: { location: 'new-home' } }] }]),
+    conditionSources: { storyEvents: [], items: [{ id: 'photo', name: '照片' }], npcs: [], locations: [],
+      playerIndicators: [], periods: [], playerFields: [], rules: [] } }));
+  assert.doesNotMatch(html, /未知地点/);
 });
 
 test('time periods can change order but never become empty', () => {

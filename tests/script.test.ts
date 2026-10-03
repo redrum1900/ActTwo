@@ -29,6 +29,65 @@ test('story event definitions and references are validated before publishing', (
   assert.match(validateScript(script).join('；'), /事件.*未知剧情事件 missing-event/);
 });
 
+test('typed conditions reject unknown references, invalid dates and incompatible operators', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.storyIndicators = [{ id: 'day', name: '日期', type: 'date', initial: '2026-10-02', playerVisible: false }];
+  script.endings[0].condition = { storyIndicator: { id: 'missing', eq: '2026-10-02' } };
+  assert.match(validateScript(script).join('；'), /未知剧本指标 missing/);
+  script.endings[0].condition = { storyIndicator: { id: 'day', eq: '2026-02-30' } };
+  assert.match(validateScript(script).join('；'), /日期.*无效/);
+  script.endings[0].condition = { storyIndicator: { id: 'day', contains: '2026' } };
+  assert.match(validateScript(script).join('；'), /比较.*不适用/);
+});
+
+test('new-format effects reject unknown story targets and edits to the system once ledger', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.storyIndicators = [
+    { id: 'ledger', name: '已执行规则', type: 'tags', initial: [], playerVisible: false, systemRole: 'onceRules' },
+    { id: 'score', name: '分数', type: 'number', initial: 0, min: 0, max: 100, playerVisible: false },
+  ];
+  script.events = [...script.events, { id: 'bad-story-effects', npc: 'su-nian', intent: '测试', trigger: 'semantic', effects: [
+    { type: 'setIndicator', target: 'story', id: 'missing', value: 1 },
+    { type: 'addIndicatorTag', target: 'story', id: 'ledger', tag: 'manual' },
+    { type: 'removeStoryEvent', eventId: 'missing-event' },
+    { type: 'giveItem', to: 'location:missing', item: script.items[0].id },
+  ] }];
+  const errors = validateScript(script).join('；');
+  assert.match(errors, /未知指标 story:missing/);
+  assert.match(errors, /系统指标.*不可修改/);
+  assert.match(errors, /未知剧情事件 missing-event/);
+  assert.match(errors, /未知持有地点 location:missing/);
+});
+
+test('new-format rules require a unique shared rule ID across player and NPC scopes', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.storyIndicators = [{ id: 'ledger', name: '已执行规则', type: 'tags', initial: [], playerVisible: false, systemRole: 'onceRules' }];
+  const duplicate = script.events[0].id;
+  script.playerRules = [{ id: duplicate, intent: '重复', trigger: 'automatic', effects: [] }];
+  assert.match(validateScript(script).join('；'), /规则.*重复 ID/);
+});
+
+test('opening question defaults and choices are validated by type', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.playerFields = [
+    { id: 'birthday', label: '生日', type: 'date', default: '2026-02-30' },
+    { id: 'choice', label: '选择', type: 'select', options: [{ value: 'a', label: '甲' }], default: 'b' },
+    { id: 'multi', label: '多选', type: 'checkbox', options: [{ value: 'a', label: '甲' }], default: ['b'] },
+  ];
+  const errors = validateScript(script).join('；');
+  assert.match(errors, /birthday.*日期无效/);
+  assert.match(errors, /choice.*默认值/);
+  assert.match(errors, /multi.*默认值/);
+});
+
+test('a non-editable opening question must provide its required value in the script', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.playerFields = [{ id: 'birthday', label: '生日', type: 'date', editable: false }];
+  assert.match(validateScript(script).join('；'), /birthday.*不可编辑.*默认值/);
+  script.playerFields = [{ id: 'birthday', label: '生日', type: 'date', editable: false, default: '2000-01-01' }];
+  assert.doesNotMatch(validateScript(script).join('；'), /birthday.*不可编辑.*默认值/);
+});
+
 test('new gallery entries without a condition cannot pass publication validation', () => {
   const script = structuredClone(loadScript('sword-and-screen'));
   script.endings = [...script.endings, { id: 'new-ending', name: '新结局', description: '', condition: undefined as never }];
@@ -83,6 +142,12 @@ test('common persona cannot have a condition', () => {
   const game = structuredClone(loadScript('sword-and-screen'));
   game.npcs[0].personas![0].when = { indicator: { id: 'affection', gte: 50 } };
   assert.match(validateScript(game).join('；'), /通用人格.*不能配置条件/);
+});
+
+test('triggered world book entries require a keyword before publication', () => {
+  const script = structuredClone(loadScript('sword-and-screen'));
+  script.npcs[0].lore = [{ id: 'empty-trigger', name: '线索', type: 'triggered', keywords: [], content: '秘密' }];
+  assert.match(validateScript(script).join('；'), /世界书.*触发词/);
 });
 
 test('duplicate item names and invalid condition shape report author-facing issues', () => {

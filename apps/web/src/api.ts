@@ -24,7 +24,12 @@ export interface SessionPayload {
   changes?: { kind: string; text: string; entityId?: string }[];
 }
 export interface SlotSummary {
-  slot: number; label: string; updatedAt: string; playerName: string | string[]; day: number; location: string;
+  slot: number; label: string; updatedAt: string; scriptVersion: string; loadable: boolean;
+  playerName: string | string[]; day: number; location: string;
+}
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); this.name = 'ApiError'; }
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -34,7 +39,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     ...options,
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || `请求失败 (${response.status})`);
+  if (!response.ok) throw new ApiError(data.error || `请求失败 (${response.status})`, response.status);
   return data as T;
 }
 

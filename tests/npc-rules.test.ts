@@ -60,6 +60,62 @@ test('indicator conditions compose and read another NPC by explicit ID', () => {
   assert.equal(evaluateCondition({ indicator: { npcId: 'missing', id: 'trust', eq: 40 } }, state, script), false);
 });
 
+test('new-format once rules share a story tag ledger and do not depend on removable events', () => {
+  const eventId = '11111111-1111-4111-8111-111111111111';
+  const configured: GameScript = { ...script, storyEvents: [{ id: eventId, label: '告白', detail: '' }], storyIndicators: [
+    { id: 'ledger', name: '已执行规则', type: 'tags', initial: [], playerVisible: false, systemRole: 'onceRules' },
+    { id: 'score', name: '分数', type: 'number', initial: 0, min: 0, max: 100, playerVisible: false },
+  ], events: [
+    { id: 'score-a', npc: 'a', intent: '加分 A', trigger: 'semantic', once: true, effects: [
+      { type: 'changeIndicator', target: 'story', id: 'score', by: 5 }, { type: 'recordStoryEvent', eventId }] },
+    { id: 'score-b', npc: 'a', intent: '加分 B', trigger: 'semantic', once: true, effects: [
+      { type: 'changeIndicator', target: 'story', id: 'score', by: 3 }, { type: 'removeStoryEvent', eventId }] },
+  ] };
+  const initial = createInitialState(configured, {});
+  const first = applyEvent(configured, initial, 'score-a');
+  assert.equal(first.applied, true);
+  assert.deepEqual(first.state.storyIndicators?.ledger.value, ['score-a']);
+  assert.equal(first.state.storyEventFlags.length, 1);
+  const second = applyEvent(configured, first.state, 'score-b');
+  assert.equal(second.applied, true);
+  assert.equal(second.state.storyIndicators?.score.value, 8);
+  assert.deepEqual(second.state.storyIndicators?.ledger.value, ['score-a', 'score-b']);
+  assert.deepEqual(second.state.storyEventFlags, []);
+  assert.equal(applyEvent(configured, second.state, 'score-a').applied, false);
+  assert.equal(second.state.completedEvents.length, 0);
+});
+
+test('new-format mixed effect failure rolls back score, item and once ledger', () => {
+  const configured: GameScript = { ...script, storyIndicators: [
+    { id: 'ledger', name: '已执行规则', type: 'tags', initial: [], playerVisible: false, systemRole: 'onceRules' },
+    { id: 'score', name: '分数', type: 'number', initial: 0, min: 0, max: 10, playerVisible: false },
+  ], events: [{ id: 'bad-bundle', npc: 'a', intent: '错误结算', trigger: 'semantic', once: true, effects: [
+    { type: 'changeIndicator', target: 'story', id: 'score', by: 5 },
+    { type: 'giveItem', to: 'player', item: 'gift' },
+    { type: 'setIndicator', target: 'story', id: 'score', value: 50 },
+  ] }] };
+  const initial = createInitialState(configured, {});
+  const before = structuredClone(initial);
+  const result = applyEvent(configured, initial, 'bad-bundle');
+  assert.equal(result.applied, false);
+  assert.deepEqual(result.state, before);
+  assert.deepEqual(initial, before);
+});
+
+test('new-format player rule writes once ledger and does not repeat its score effect', () => {
+  const configured: GameScript = { ...script, storyIndicators: [
+    { id: 'ledger', name: '已执行规则', type: 'tags', initial: [], playerVisible: false, systemRole: 'onceRules' },
+    { id: 'score', name: '分数', type: 'number', initial: 0, min: 0, max: 10, playerVisible: false },
+  ], playerRules: [{ id: 'wait-score', intent: '等待加分', trigger: 'action', actions: ['wait'], once: true,
+    effects: [{ type: 'changeIndicator', target: 'story', id: 'score', by: 2 }] }] };
+  const first = runAutomaticRules(configured, createInitialState(configured, {}), 'wait');
+  assert.deepEqual(first.appliedIds, ['wait-score']);
+  assert.deepEqual(first.state.storyIndicators?.ledger.value, ['wait-score']);
+  const second = runAutomaticRules(configured, first.state, 'wait');
+  assert.deepEqual(second.appliedIds, []);
+  assert.equal(second.state.storyIndicators?.score.value, 2);
+});
+
 test('semantic gates read the turn-start state and automatic rules run one layer', () => {
   const initial = createInitialState(script, {});
   const semantic = settlePlayerEvents(script, initial, 'a', ['gain-only', 'late-gate']);

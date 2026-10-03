@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Tag, Upload } from 'antd';
+import { Upload } from 'antd';
 import TabbedEntriesEditor from './TabbedEntriesEditor.js';
-import { addEntry, addEntryTag, newEntryId, patchEntryById, removeEntry, removeEntryTag } from './section-forms.js';
+import { addEntry, newEntryId, patchEntryById, removeEntry } from './section-forms.js';
 
-interface ItemDraft { id: string; name: string; description?: string; detail?: string; initialTags?: string[]; image?: string; [key: string]: unknown }
+interface ItemDraft { id: string; name: string; description?: string; detail?: string; image?: string; [key: string]: unknown }
 interface Props { content: string; onChange: (value: string) => void; projectId?: string;
   imageFiles?: Record<string, File>; onImageFileChange?: (id: string, file: File | null) => void }
 
@@ -37,10 +37,9 @@ function ItemImagePicker({ item, projectId, file, onFileChange, onRemoveSaved }:
 
 export default function ItemsEditor({ content, onChange, projectId, imageFiles = {}, onImageFileChange }: Props) {
   const entries = JSON.parse(content) as ItemDraft[];
-  const [newTag, setNewTag] = useState('');
   const patch = (id: string, fields: Record<string, unknown>) => onChange(patchEntryById(content, id, fields));
-  return <TabbedEntriesEditor entries={entries} kind="道具" onAdd={() => {
-    const item = { id: newEntryId(), name: '新道具', description: '', detail: '', initialTags: [] };
+  return <TabbedEntriesEditor entries={entries} kind="道具" layout="side" onAdd={() => {
+    const item = { id: newEntryId(), name: '新道具', description: '', detail: '' };
     onChange(addEntry(content, item)); return item;
   }} onRemove={id => { onImageFileChange?.(id, null); onChange(removeEntry(content, id)); }} render={item => <>
     <div className="creator-form-grid">
@@ -52,12 +51,6 @@ export default function ItemsEditor({ content, onChange, projectId, imageFiles =
     </div>
     <ItemImagePicker item={item} projectId={projectId} file={imageFiles[item.id]}
       onFileChange={file => onImageFileChange?.(item.id, file)} onRemoveSaved={() => patch(item.id, { image: undefined })} />
-    <div className="creator-item-tags"><strong>初始标签</strong><div>{(item.initialTags ?? []).map(tag =>
-      <Tag key={tag} closable onClose={event => { event.preventDefault(); onChange(removeEntryTag(content, item.id, tag)); }}>{tag}</Tag>)}</div>
-      <div className="creator-item-tags-add"><input aria-label="新标签" value={newTag} placeholder="输入标签" onChange={event => setNewTag(event.target.value)}
-        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); onChange(addEntryTag(content, item.id, newTag)); setNewTag(''); } }} />
-        <button type="button" onClick={() => { onChange(addEntryTag(content, item.id, newTag)); setNewTag(''); }} disabled={!newTag.trim()}>添加标签</button></div>
-    </div>
     <p className="creator-form-note">道具变体等高级配置会保留；需要修改时可切换 JSON 模式。</p>
   </>} />;
 }

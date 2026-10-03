@@ -50,7 +50,7 @@ test('only admin approves submitted snapshot; old release survives pending and r
     assert.equal((await call(`/creator/reviews/${first.data.id}`, 'GET', undefined, adminCookie)).data.script.title, '线上初版');
     assert.equal((await call(`/creator/reviews/${first.data.id}/approve`, 'POST', {}, adminCookie)).status, 200);
     assert.equal((await call('/catalog')).data.games.some((item: any) => item.id === created.data.id), true);
-    assert.equal((await call(`/games/${created.data.id}/new`, 'POST', { player: { name: '小夏' } })).status, 200);
+    assert.equal((await call(`/games/${created.data.id}/new`, 'POST', { player: { name: '小夏' } }, authorCookie)).status, 200);
     const detail = await call(story, 'GET', undefined, authorCookie);
     const manifest = detail.data.sections['manifest.json'];
     await call(`${story}/sections`, 'PUT', {

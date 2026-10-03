@@ -1,8 +1,7 @@
 import 'dotenv/config';
-import { mkdirSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
+import { createMysqlPool } from '../apps/api/src/db/mysql.js';
+import { migrateMysql } from '../apps/api/src/db/migrations.js';
+import { createMysqlCreatorStore } from '../apps/api/src/db/mysql-auth-store.js';
 
 const username = process.argv[2];
 if (!username) throw new Error('用法：npm run admin:create -- <用户名>');
@@ -31,12 +30,10 @@ async function readPassword(): Promise<string> {
   });
 }
 
-const projectRoot = fileURLToPath(new URL('../', import.meta.url));
-const filename = process.env.CREATOR_DB_PATH || path.join(projectRoot, 'data/game.sqlite');
-mkdirSync(path.dirname(filename), { recursive: true });
 const password = await readPassword();
-const store = createCreatorStore(filename);
+const pool = createMysqlPool(process.env);
 try {
-  const account = store.createAdmin(username, password);
+  await migrateMysql(pool);
+  const account = await createMysqlCreatorStore(pool).createAdmin(username, password);
   process.stdout.write(`已创建管理员 ${account.username}\n`);
-} finally { store.close(); }
+} finally { await pool.end(); }

@@ -4,12 +4,17 @@ export interface ReviewSummary { id: string; projectId: string; projectTitle: st
   contentHash: string; version: string; status: 'pending' | 'approved' | 'rejected'; submittedAt: string;
   reviewedAt: string | null; reviewerId: string | null; rejectionReason: string | null }
 export interface ReviewDetail extends ReviewSummary { script: Record<string, unknown> }
-export interface ProjectSummary { id: string; title: string; createdAt: string; updatedAt: string; publishedAt: string | null; review: ReviewSummary | null }
+export interface ProjectSummary { id: string; title: string; subtitle?: string; createdAt: string; updatedAt: string; publishedAt: string | null; review: ReviewSummary | null }
 export interface Section { content: string; revision: number; updatedAt: string }
 export interface Project extends ProjectSummary { sections: Record<string, Section> }
 export interface Issue { path: string; message: string }
 export interface Report { errors: Issue[]; warnings: Issue[] }
 export interface Account { id: string; username: string; role: 'author' | 'admin' }
+export interface ImportJob { projectId: string; jobId: string; status: 'running' | 'ready' | 'failed' | 'cancelled' | 'applied';
+  progress: string; error: string | null; report: { inferences: string[]; issues: Issue[] } | null;
+  parts: Record<string, string> | null }
+export interface PlaytestSummary { id: string; projectId: string; createdAt: string; playedAt: string | null;
+  started: boolean; scriptHash: string }
 
 const base = '/creator';
 export const creatorApi = {
@@ -23,6 +28,25 @@ export const creatorApi = {
   create: (title: string, templateId?: string) => api<Project>(`${base}/projects`, { method: 'POST', body: JSON.stringify({ title, templateId }) }),
   save: (id: string, path: string, content: string, revision: number) => api<Section>(`${base}/projects/${encodeURIComponent(id)}/sections`,
     { method: 'PUT', body: JSON.stringify({ path, content, revision }) }),
+  migrateStats: (id: string, revisions: Record<string, number>) => api<Project>(`${base}/projects/${encodeURIComponent(id)}/migrate-stats`,
+    { method: 'POST', body: JSON.stringify({ revisions }) }),
+  uploadImport: async (id: string, file: File | Blob, fileName: string): Promise<{ projectId: string; jobId: string }> => {
+    const response = await fetch(`/api${base}/projects/${encodeURIComponent(id)}/import-jobs`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream',
+        'X-Import-Filename': encodeURIComponent(fileName) }, body: file });
+    const data = await response.json() as { projectId?: string; jobId?: string; error?: string };
+    if (!response.ok || !data.jobId || !data.projectId) throw new Error(data.error ?? `导入上传失败 (${response.status})`);
+    return { projectId: data.projectId, jobId: data.jobId };
+  },
+  importJob: (id: string, jobId: string) => api<ImportJob>(`${base}/projects/${encodeURIComponent(id)}/import-jobs/${encodeURIComponent(jobId)}`),
+  applyImport: (id: string, jobId: string) => api<{ projectId: string; project: Project }>(
+    `${base}/projects/${encodeURIComponent(id)}/import-jobs/${encodeURIComponent(jobId)}/apply`, { method: 'POST' }),
+  cancelImport: (id: string, jobId: string) => api<{ ok: boolean }>(
+    `${base}/projects/${encodeURIComponent(id)}/import-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
+  listPlaytests: (id: string) => api<{ playtests: PlaytestSummary[] }>(`${base}/projects/${encodeURIComponent(id)}/playtests`),
+  createPlaytest: (id: string) => api<PlaytestSummary>(`${base}/projects/${encodeURIComponent(id)}/playtests`, { method: 'POST' }),
+  deletePlaytest: (id: string, playtestId: string) => api<{ ok: boolean }>(
+    `${base}/projects/${encodeURIComponent(id)}/playtests/${encodeURIComponent(playtestId)}`, { method: 'DELETE' }),
   uploadCover: async (id: string, file: File): Promise<{ cover: string }> => {
     const response = await fetch(`/api${base}/projects/${encodeURIComponent(id)}/cover`, { method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': file.type }, body: file });

@@ -1,13 +1,20 @@
 import { useMemo, useState } from 'react';
+import { promptAction } from '../dialogs.js';
 import { fieldLabels, labelOf, starterEntry } from './sections.js';
 import ManifestEditor from './ManifestEditor.js';
 import LocationsEditor from './LocationsEditor.js';
-import StoryEventRuleControls from './StoryEventRuleControls.js';
 import ItemsEditor from './ItemsEditor.js';
+import PlayerFormEditor from './PlayerFormEditor.js';
+import IndicatorEditor from './IndicatorEditor.js';
+import RulesEditor from './RulesEditor.js';
 import GalleryEditor from './GalleryEditor.js';
+import NpcBaseEditor from './NpcBaseEditor.js';
+import NpcLoreEditor from './NpcLoreEditor.js';
+import NpcPersonasEditor from './NpcPersonasEditor.js';
 import type { ConditionSources } from './condition-tree.js';
 
 interface Props { path: string; content: string; onChange: (value: string) => void;
+  onMigrateStats?: () => void;
   savedLocations?: { id: string; name: string }[]; projectId?: string;
   savedStoryEvents?: { id: string; label: string }[];
   referencedStoryEventIds?: readonly string[];
@@ -17,14 +24,14 @@ interface Props { path: string; content: string; onChange: (value: string) => vo
 const stringify = (value: unknown) => JSON.stringify(value, null, 2);
 const primitive = (value: unknown) => ['string', 'number', 'boolean'].includes(typeof value);
 
-export default function SectionEditor({ path, content, onChange, savedLocations = [], savedStoryEvents = [], referencedStoryEventIds = [], conditionSources, projectId, coverFile, onCoverFileChange,
+export default function SectionEditor({ path, content, onChange, onMigrateStats, savedLocations = [], savedStoryEvents = [], referencedStoryEventIds = [], conditionSources, projectId, coverFile, onCoverFileChange,
   itemImageFiles, onItemImageFileChange }: Props) {
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const parsed = useMemo(() => { try { return { value: JSON.parse(content) as unknown, error: '' }; }
     catch (error) { return { value: undefined, error: error instanceof Error ? error.message : 'JSON 格式错误' }; } }, [content]);
   const invalidLocations = path === 'locations.json' && Array.isArray(parsed.value)
     && parsed.value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.id !== 'string');
-  const tabbedPath = ['items.json', 'endings.json', 'achievements.json'].includes(path);
+  const tabbedPath = ['items.json', 'endings.json', 'achievements.json'].includes(path) || /^npcs\/[^/]+\/(?:lore|personas)\.json$/.test(path);
   const invalidTabbedEntries = tabbedPath && Array.isArray(parsed.value)
     && parsed.value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.id !== 'string' || !entry.id);
   const info = labelOf(path);
@@ -40,10 +47,10 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
           [key]: typeof current === 'number' ? (Number(event.target.value) || 0) : event.target.value })} />
           : <><textarea rows={Math.min(8, Math.max(3, stringify(current).split('\n').length))} value={stringify(current)} readOnly
             aria-label={`${key} 复杂结构预览`} /><button className="creator-small" type="button" onClick={() => setMode('json')}>在 JSON 模式编辑此结构 ↗</button></>}
-    </label>)}<button className="creator-add-field" type="button" onClick={() => {
-      const key = prompt('新字段名称（请按剧本配置规范填写）');
-      if (key?.trim() && !(key.trim() in value)) commit({ ...value, [key.trim()]: '' });
-    }}>＋ 添加字段</button></div>;
+    </label>)}<button className="creator-add-field" type="button" onClick={() => void (async () => {
+      const key = await promptAction('新字段名称（请按剧本配置规范填写）');
+      if (key && !(key in value)) commit({ ...value, [key]: '' });
+    })()}>＋ 添加字段</button></div>;
   const value = parsed.value;
   return <section className="creator-section-editor">
     <div className="creator-section-head"><div><div className="creator-kicker">CONFIGURATION / {path}</div><h2>{info.name}</h2><p>{info.help}</p></div>
@@ -58,11 +65,29 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
         ? <ManifestEditor content={content} onChange={onChange} savedLocations={savedLocations} projectId={projectId}
           coverFile={coverFile} onCoverFileChange={onCoverFileChange} referencedStoryEventIds={referencedStoryEventIds} />
       : path === 'locations.json' && Array.isArray(value)
-        ? <LocationsEditor content={content} onChange={onChange} />
+        ? <LocationsEditor content={content} onChange={onChange} sources={sources} onJson={() => setMode('json')} />
+      : /^npcs\/[^/]+\/base\.json$/.test(path) && value && typeof value === 'object' && !Array.isArray(value)
+        ? <NpcBaseEditor content={content} onChange={onChange} sources={sources} onJson={() => setMode('json')}
+          npcId={/^npcs\/([^/]+)\/base\.json$/.exec(path)![1]} />
+      : /^npcs\/[^/]+\/lore\.json$/.test(path) && Array.isArray(value)
+        ? <NpcLoreEditor content={content} onChange={onChange} />
+      : /^npcs\/[^/]+\/personas\.json$/.test(path) && Array.isArray(value)
+        ? <NpcPersonasEditor content={content} onChange={onChange}
+          sources={{ ...sources, ownerNpcId: /^npcs\/([^/]+)\/personas\.json$/.exec(path)![1] }} onJson={() => setMode('json')} />
       : path === 'items.json' && Array.isArray(value)
         ? <ItemsEditor content={content} onChange={onChange} projectId={projectId} imageFiles={itemImageFiles} onImageFileChange={onItemImageFileChange} />
+      : path === 'player-form.json' && Array.isArray(value)
+        ? <PlayerFormEditor content={content} onChange={onChange} />
+      : (path === 'story/indicators.json' || path === 'player/indicators.json' || path.endsWith('/indicators.json')) && Array.isArray(value)
+        ? <IndicatorEditor content={content} onChange={onChange} scope={path === 'story/indicators.json' ? 'story' : path === 'player/indicators.json' ? 'player' : 'npc'} />
+      : path === 'stats.json' && Array.isArray(value) && value.length > 0 && onMigrateStats
+        ? <div className="creator-legacy-stats"><p>旧属性需要显式迁移为剧本、玩家或 NPC 指标。迁移会同时转换引用，遇到 ID 冲突时不会保存任何修改。</p>
+          <button type="button" className="creator-primary" onClick={onMigrateStats}>迁移旧属性</button></div>
       : (path === 'endings.json' || path === 'achievements.json') && Array.isArray(value)
         ? <GalleryEditor content={content} onChange={onChange} kind={path === 'endings.json' ? '结局' : '成就'} sources={sources} onJson={() => setMode('json')} />
+      : (path === 'player/rules.json' || path.endsWith('/rules.json')) && Array.isArray(value)
+        ? <RulesEditor entries={value as { id: string; intent?: string; editorGroup?: string }[]}
+          path={path} onChange={onChange} savedStoryEvents={savedStoryEvents} sources={sources} onJson={() => setMode('json')} />
       : Array.isArray(value) ? <div className="creator-entries">
         <div className="creator-entry-toolbar"><span>共 {value.length} 项</span><button onClick={() => update([...value, starterEntry(path, value.length)])}>＋ 添加一项</button></div>
         {value.length === 0 && <div className="creator-empty-inline">暂无内容。点击“添加一项”开始配置。</div>}
@@ -70,10 +95,6 @@ export default function SectionEditor({ path, content, onChange, savedLocations 
           <button className="creator-danger-link" onClick={() => update(value.filter((_, i) => i !== index))}>移除</button></div>
           {entry && typeof entry === 'object' && !Array.isArray(entry) ? renderObject(entry as Record<string, unknown>, next => update(value.map((item, i) => i === index ? next : item)))
             : <textarea value={stringify(entry)} onChange={event => { try { const next = JSON.parse(event.target.value); update(value.map((item, i) => i === index ? next : item)); } catch { /* Advanced JSON editor supports incomplete input. */ } }} />}
-          {entry && typeof entry === 'object' && !Array.isArray(entry) && (path === 'player/rules.json' || path.endsWith('/rules.json')) &&
-            <StoryEventRuleControls rule={entry as Record<string, unknown>} savedStoryEvents={savedStoryEvents}
-              sources={{ ...sources, ownerNpcId: /^npcs\/([^/]+)\/rules\.json$/.exec(path)?.[1] }} onJson={() => setMode('json')}
-              onChange={next => update(value.map((item, i) => i === index ? next : item))} />}
           <button className="creator-small" onClick={() => { setMode('json'); }}>编辑完整结构 ↗</button>
         </div>)}</div>
         : value && typeof value === 'object' ? renderObject(value as Record<string, unknown>, update)

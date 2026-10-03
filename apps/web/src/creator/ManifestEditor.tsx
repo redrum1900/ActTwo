@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Select } from 'antd';
+import { Modal, Select } from 'antd';
 import { changePeriod, movePeriod, patchManifest, removePeriod } from './section-forms.js';
 import StoryEventsEditor from './StoryEventsEditor.js';
 
@@ -86,9 +86,10 @@ export default function ManifestEditor({ content, onChange, savedLocations, proj
         <button type="button" aria-label={`下移 ${period}`} disabled={index === periods.length - 1} onClick={() => patch({ periods: movePeriod(periods, index, 1) })}>→</button>
       </div>)}</div>
     </div>
-    {periodModal !== null && <div className="creator-modal-backdrop"><div className="creator-modal creator-period-modal" role="dialog" aria-modal="true" aria-labelledby="creator-period-title">
-      <div className="creator-kicker">STORY TIME</div><div className="creator-period-modal-head"><h2 id="creator-period-title">{periodModal === 'new' ? '新增时间段' : '编辑时间段'}</h2>
-        {periodModal !== 'new' && <button className="creator-danger-link" type="button" disabled={periods.length <= 1}
+    <Modal className="creator-form-dialog" title={periodModal === 'new' ? '新增时间段' : '编辑时间段'} open={periodModal !== null}
+      onCancel={() => setPeriodModal(null)} footer={null} destroyOnHidden><div className="creator-modal creator-period-modal">
+      <div className="creator-kicker">STORY TIME</div><div className="creator-period-modal-head">
+        {typeof periodModal === 'number' && <button className="creator-danger-link" type="button" disabled={periods.length <= 1}
           title={periods.length <= 1 ? '至少保留一个时间段' : '删除时间段'} onClick={() => {
             patch({ periods: removePeriod(periods, periodModal) }); setPeriodModal(null);
           }}>删除</button>}</div>
@@ -96,7 +97,7 @@ export default function ManifestEditor({ content, onChange, savedLocations, proj
         onKeyDown={event => { if (event.key === 'Enter') savePeriod(); }} /></label>
       <div className="creator-modal-actions"><button type="button" onClick={() => setPeriodModal(null)}>取消</button>
         <button className="creator-primary" type="button" disabled={!periodName.trim()} onClick={savePeriod}>确定</button></div>
-    </div></div>}
+    </div></Modal>
     <StoryEventsEditor content={content} onChange={onChange} referencedIds={referencedStoryEventIds} />
   </div>;
 }

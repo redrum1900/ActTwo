@@ -1,11 +1,12 @@
 export const sectionLabels: Record<string, { name: string; help: string }> = {
   'manifest.json': { name: '故事设定', help: '标题、简介、世界背景、初始地点和时间段。故事 ID 发布后请保持不变。' },
   'player-form.json': { name: '开局资料', help: '玩家开始游戏前填写的问题。每项有 id、label、type 和默认值。' },
-  'items.json': { name: '道具', help: '一项一个标签页；名称、描述、详情与初始标签。获得和移除由规则结算。' },
+  'items.json': { name: '道具', help: '一项一个标签页；配置名称、描述、详情和图片。获得与移除由规则结算，剧情事实请使用剧情事件。' },
   'locations.json': { name: '地点', help: '地点及玩家进入条件；NPC 当前所在地由角色快照记录。' },
   'endings.json': { name: '结局', help: '定义结局名称、描述及触发条件；ID 自动生成。' },
   'achievements.json': { name: '成就', help: '玩家可解锁的成就。' },
-  'stats.json': { name: '属性定义', help: '跨角色的基础属性配置。' },
+  'stats.json': { name: '旧属性迁移', help: '旧版数值属性；迁移后请使用剧本、玩家和 NPC 指标。' },
+  'story/indicators.json': { name: '剧本指标', help: '定义全局数值、文本、标签、日期等状态；条件和规则可引用。' },
   'player/indicators.json': { name: '玩家指标', help: '玩家自身状态；visible 控制是否给玩家看。' },
   'player/rules.json': { name: '玩家规则', help: '根据玩家行为触发指标、道具和其他角色的变化。' },
 };
@@ -33,14 +34,14 @@ export function starterEntry(path: string, index: number): Record<string, unknow
   const id = `entry-${index + 1}`;
   if (path === 'items.json') return { id, name: '新道具', description: '' };
   if (path === 'locations.json') return { id, name: '新地点', description: '', interactionMode: 'in-person', spots: [] };
-  if (path === 'player-form.json') return { id, label: '新问题', type: 'input', default: '', required: false, editable: true, public: true };
+  if (path === 'player-form.json') return { id: crypto.randomUUID(), label: '新问题', type: 'input', default: '', required: false, editable: true, public: true };
   if (path.endsWith('/personas.json')) return { id, name: '新性格', content: '' };
   if (path.endsWith('/rules.json')) return { id, intent: '', trigger: 'semantic', effects: [] };
-  if (path.endsWith('/indicators.json')) return { id, name: '新指标', type: 'boolean', initial: false, playerVisible: false };
+  if (path.endsWith('/indicators.json')) return { id: crypto.randomUUID(), name: '新指标', type: 'boolean', initial: false, playerVisible: false };
   return { id, name: '新条目', description: '' };
 }
 export function groupedSections(paths: string[]) {
-  const root = paths.filter(path => !path.includes('/'));
+  const root = paths.filter(path => !path.includes('/') || path.startsWith('story/'));
   const player = paths.filter(path => path.startsWith('player/'));
   const npcIds = [...new Set(paths.flatMap(path => /^npcs\/([^/]+)\//.exec(path)?.[1] ?? []))];
   return { root, player, npcIds };

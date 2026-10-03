@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../apps/api/src/app.js';
 import { createSaveStore } from '../apps/api/src/save-store.js';
 import type { ChatAdapter } from '../apps/api/src/chat-service.js';
+import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
 
 test('Su Nian progresses by semantic indicators through online chat, dinner, home, items, and ending', async () => {
   const adapter: ChatAdapter = {
@@ -22,10 +23,11 @@ test('Su Nian progresses by semantic indicators through online chat, dinner, hom
     rewrite: async (_context, draft) => draft,
   };
   const store = createSaveStore(':memory:');
-  const server = createApp(store, adapter).listen(0);
+  const accounts = createCreatorStore(':memory:');
+  const server = createApp(store, adapter, { creatorStore: accounts }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  let cookie = '';
+  let cookie = `gd_creator=${accounts.register('acceptance_player', 'player-password-1').token}`;
   let revision = 0;
   const request = async (path: string, body?: unknown) => {
     const response = await fetch(`${base}/api/games/sword-and-screen${path}`, {
@@ -41,7 +43,7 @@ test('Su Nian progresses by semantic indicators through online chat, dinner, hom
   const action = (payload: object) => request('/action', { ...payload, revision });
   const chat = (text: string) => request('/chat', { npcId: 'su-nian', text, revision });
   try {
-    let data = await request('/new', { player: { name: '阿言', birthday: '', playStyle: 'team', hobbies: ['game'] } });
+    let data = await request('/new', { player: { name: '阿言', birthday: '2000-01-01', playStyle: 'team', hobbies: ['game'] } });
     assert.deepEqual(data.view.locations.map((entry: any) => entry.id), ['player-home']);
     data = await action({ type: 'search' });
     assert.deepEqual(data.view.location.items.map((entry: any) => entry.id), ['game-screenshot']);
@@ -83,13 +85,13 @@ test('Su Nian progresses by semantic indicators through online chat, dinner, hom
     data = await action({ type: 'take', itemId: 'practice-note' });
     assert.ok(data.view.items.some((entry: any) => entry.id === 'practice-note'));
     data = await chat('我能翻阅训练笔记吗？');
-    assert.ok(data.view.items.find((entry: any) => entry.id === 'practice-note').tags.includes('获准阅读'));
+    assert.match(data.view.items.find((entry: any) => entry.id === 'practice-note').detail, /主动在重要的一页留下批注/);
     data = await chat('我想继续听你说真实的你');
     assert.ok(data.gallery.some((entry: any) => entry.id === 'real-me' && entry.unlocked));
     assert.ok(data.view.knownNpcs[0].stats.find((entry: any) => entry.id === 'affection').value >= 90);
     assert.ok(data.view.chats['su-nian'].length > 20);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    store.close(); accounts.close();
   }
 });

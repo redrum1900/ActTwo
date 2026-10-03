@@ -1,10 +1,10 @@
 import type Database from 'better-sqlite3';
 import type { GameScript } from '@game/contracts';
-import { inspectScriptParts, blankScriptParts, scriptPartsFromScript, type ScriptParts } from '@game/script/parts';
+import { inspectScriptParts, blankScriptParts, migrateLegacyStatsParts, scriptPartsFromScript, type ScriptParts } from '@game/script/parts';
 import { listScripts, type ScriptIssue } from '@game/script';
 
 const safeId = /^[a-z0-9][a-z0-9-]*$/;
-const safeSection = /^(?:manifest|player-form|items|locations|endings|achievements|stats)\.json$|^player\/(?:indicators|rules)\.json$|^npcs\/[a-z0-9][a-z0-9-]*\/(?:base|indicators|personas|rules|lore)\.json$/;
+const safeSection = /^(?:manifest|player-form|items|locations|endings|achievements|stats)\.json$|^story\/indicators\.json$|^player\/(?:indicators|rules)\.json$|^npcs\/[a-z0-9][a-z0-9-]*\/(?:base|indicators|personas|rules|lore)\.json$/;
 const now = () => new Date().toISOString();
 
 export class ProjectError extends Error {
@@ -60,10 +60,17 @@ export function createProjectStore(db: Database.Database) {
 
   const store = {
     setItemImageValidator(validator: (projectId: string, script: GameScript) => ScriptIssue[]) { itemImageValidator = validator; },
-    list(owner: string): Omit<CreatorProject, 'sections'>[] {
-      return (db.prepare('SELECT * FROM creator_projects WHERE owner_id=? AND deleted_at IS NULL ORDER BY updated_at DESC')
-        .all(owner) as ProjectRow[]).map(({ id, title, created_at, updated_at, published_at }) =>
-        ({ id, title, createdAt: created_at, updatedAt: updated_at, publishedAt: published_at }));
+    list(owner: string): (Omit<CreatorProject, 'sections'> & { subtitle: string })[] {
+      const rows = db.prepare(`SELECT p.*, s.content AS manifest_content FROM creator_projects p
+        LEFT JOIN creator_sections s ON s.project_id=p.id AND s.path='manifest.json'
+        WHERE p.owner_id=? AND p.deleted_at IS NULL ORDER BY p.updated_at DESC`)
+        .all(owner) as (ProjectRow & { manifest_content: string | null })[];
+      return rows.map(({ id, title, created_at, updated_at, published_at, manifest_content }) => {
+        let subtitle = '';
+        try { const value = JSON.parse(manifest_content ?? '{}').subtitle; if (typeof value === 'string') subtitle = value; }
+        catch { /* Invalid JSON remains an editable draft. */ }
+        return { id, title, subtitle, createdAt: created_at, updatedAt: updated_at, publishedAt: published_at };
+      });
     },
     get(owner: string, id: string): CreatorProject | null {
       const row = owned(owner, id);
@@ -100,6 +107,26 @@ export function createProjectStore(db: Database.Database) {
       const row = db.prepare('SELECT content,revision,updated_at FROM creator_sections WHERE project_id=? AND path=?').get(id, path) as Omit<SectionRow, 'path'>;
       return { content: row.content, revision: row.revision, updatedAt: row.updated_at };
     },
+    migrateStats: db.transaction((owner: string, id: string, expectedRevisions: Record<string, number>): CreatorProject => {
+      requireOwned(owner, id);
+      const current = sections(id);
+      for (const [path, section] of Object.entries(current))
+        if (expectedRevisions[path] !== section.revision) throw new ProjectError(`迁移冲突：${path} 已在其他窗口修改`, 409);
+      let migrated: ScriptParts;
+      try { migrated = migrateLegacyStatsParts(parts(id)); }
+      catch (error) { throw new ProjectError(error instanceof Error ? error.message : '属性迁移失败'); }
+      if (migrated['stats.json'] === current['stats.json']?.content) throw new ProjectError('没有需要迁移的旧属性');
+      const timestamp = now();
+      const update = db.prepare('UPDATE creator_sections SET content=?,revision=revision+1,updated_at=? WHERE project_id=? AND path=?');
+      const insert = db.prepare('INSERT INTO creator_sections (project_id,path,content,revision,updated_at) VALUES (?,?,?,1,?)');
+      for (const [path, content] of Object.entries(migrated)) {
+        if (current[path]?.content === content) continue;
+        if (current[path]) update.run(content, timestamp, id, path);
+        else insert.run(id, path, content, timestamp);
+      }
+      db.prepare('UPDATE creator_projects SET updated_at=? WHERE id=?').run(timestamp, id);
+      return store.get(owner, id)!;
+    }),
     addNpc: db.transaction((owner: string, id: string, npcId: string, name: string) => {
       requireOwned(owner, id);
       if (!safeId.test(npcId) || npcId.length > 64) throw new ProjectError('NPC ID 不合法');

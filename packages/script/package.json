@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./parts": "./src/parts.ts"
+    "./parts": "./src/parts.ts",
+    "./lore": "./src/lore.ts"
   },
   "dependencies": { "@game/contracts": "*" }
 }

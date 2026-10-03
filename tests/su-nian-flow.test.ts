@@ -37,6 +37,21 @@ test('Su Nian confession records a reusable story event while once stays interna
   assert.equal(evaluateCondition(again.when, first.state, script), true);
 });
 
+test('reading permission is a story event gated by possessing the practice note', () => {
+  const script = loadScript('sword-and-screen');
+  const initial = createInitialState(script, { name: '阿言' });
+  assert.equal(applyEvent(script, initial, 'read-practice-note').applied, false);
+  const carrying = structuredClone(initial);
+  carrying.itemStates['practice-note'].owner = 'player';
+  carrying.playerItems['practice-note'] = 1;
+  assert.equal(makeView(script, carrying).items.find(item => item.id === 'practice-note')?.detail.includes('主动在重要的一页'), false);
+  const allowed = applyEvent(script, carrying, 'read-practice-note');
+  assert.equal(allowed.applied, true);
+  assert.equal(allowed.state.storyEventFlags.some(event => event.label === '获准阅读训练笔记'), true);
+  assert.equal(makeView(script, allowed.state).items.find(item => item.id === 'practice-note')?.detail.includes('主动在重要的一页'), true);
+  assert.equal(applyEvent(script, allowed.state, 'read-practice-note').applied, false);
+});
+
 test('catalog contains only the current Su Nian story', () => {
   assert.deepEqual(listScripts().map((script) => script.id), ['sword-and-screen']);
 });

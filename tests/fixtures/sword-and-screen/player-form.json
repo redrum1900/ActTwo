@@ -1,0 +1,6 @@
+[
+  { "id": "name", "label": "你的名字", "type": "input", "default": "阿言", "required": true, "editable": true, "public": true },
+  { "id": "birthday", "label": "生日", "type": "date", "required": true, "editable": true, "public": false },
+  { "id": "playStyle", "label": "游戏风格", "type": "radio", "default": "team", "required": true, "editable": true, "options": [{ "value": "team", "label": "并肩作战" }, { "value": "solo", "label": "独自冲锋" }] },
+  { "id": "hobbies", "label": "兴趣", "type": "checkbox", "default": ["game"], "required": true, "editable": true, "options": [{ "value": "game", "label": "打游戏" }, { "value": "sport", "label": "运动" }, { "value": "music", "label": "音乐" }] }
+]

@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { ProjectError } from '../creator/project-store.js';
 import type { MysqlProjectStore } from './mysql-project-store.js';
+import { createMysqlPublishedVersions } from './mysql-published-versions.js';
 
 const maxBytes = 5 * 1024 * 1024;
 const formats = {
@@ -15,6 +16,7 @@ interface Asset extends RowDataPacket { id: string; project_id: string; mime: st
 type Kind = 'cover' | 'item';
 
 export function createMysqlCoverAssets(pool: Pool, directory: string, projects: MysqlProjectStore) {
+  const publications = createMysqlPublishedVersions(pool);
   mkdirSync(directory, { recursive: true });
   mkdirSync(path.join(directory, 'items'), { recursive: true });
   const table = (kind: Kind) => kind === 'cover' ? 'creator_cover_assets' : 'creator_item_image_assets';
@@ -26,14 +28,22 @@ export function createMysqlCoverAssets(pool: Pool, directory: string, projects: 
   };
   const linked = async (kind: Kind, asset: Asset, published: boolean) => {
     const script = published ? await projects.getPublished(asset.project_id) : null;
-    let content: { cover?: string; items?: readonly { image?: string }[] } | null = script;
-    if (!published) {
-      const section = kind === 'cover' ? 'manifest.json' : 'items.json';
-      const [rows] = await pool.execute<(RowDataPacket & { content: string })[]>(
-        'SELECT content FROM creator_sections WHERE project_id=? AND path=?', [asset.project_id, section]);
-      try { content = kind === 'cover' ? JSON.parse(rows[0]?.content ?? '{}') : { items: JSON.parse(rows[0]?.content ?? '[]') }; }
-      catch { return false; }
+    if (published) return !!script && publications.referencesAsset(asset.project_id, reference(kind, asset.id), kind);
+    const [playtests] = await pool.execute<(RowDataPacket & { script_json: string })[]>(
+      'SELECT script_json FROM creator_playtests WHERE project_id=?', [asset.project_id]);
+    for (const playtest of playtests) {
+      try {
+        const frozen = JSON.parse(playtest.script_json) as { cover?: string; items?: readonly { image?: string }[] };
+        if (kind === 'cover' ? frozen.cover === reference(kind, asset.id)
+          : frozen.items?.some(item => item.image === reference(kind, asset.id))) return true;
+      } catch { /* An invalid frozen snapshot does not make an asset public. */ }
     }
+    let content: { cover?: string; items?: readonly { image?: string }[] } | null = script;
+    const section = kind === 'cover' ? 'manifest.json' : 'items.json';
+    const [rows] = await pool.execute<(RowDataPacket & { content: string })[]>(
+      'SELECT content FROM creator_sections WHERE project_id=? AND path=?', [asset.project_id, section]);
+    try { content = kind === 'cover' ? JSON.parse(rows[0]?.content ?? '{}') : { items: JSON.parse(rows[0]?.content ?? '[]') }; }
+    catch { return false; }
     return kind === 'cover' ? content?.cover === reference(kind, asset.id) :
       (content?.items?.some(item => item.image === reference(kind, asset.id)) ?? false);
   };

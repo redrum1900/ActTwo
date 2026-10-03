@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { confirmAction } from '../dialogs.js';
 import { newStoryEvent, patchManifest, patchStoryEvent, removeStoryEvent } from './section-forms.js';
 
 interface StoryEvent { id: string; label: string; detail: string }
@@ -14,10 +15,10 @@ export default function StoryEventsEditor({ content, onChange, referencedIds = [
     onChange(patchManifest(content, { storyEvents: [...events, next] }));
     setSelectedId(next.id);
   };
-  const remove = (event: StoryEvent) => {
-    if (!window.confirm(referencedIds.includes(event.id)
+  const remove = async (event: StoryEvent) => {
+    if (!await confirmAction(referencedIds.includes(event.id)
       ? `剧情事件「${event.label || '未命名'}」仍被配置引用。删除后将无法提交审核，确定删除？`
-      : `确定删除剧情事件「${event.label || '未命名'}」？`)) return;
+      : `确定删除剧情事件「${event.label || '未命名'}」？`, true)) return;
     onChange(removeStoryEvent(content, event.id));
     if (selected?.id === event.id) setSelectedId(events.find(entry => entry.id !== event.id)?.id ?? null);
   };

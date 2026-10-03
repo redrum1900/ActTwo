@@ -2,7 +2,10 @@
   "name": "game-dd",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm run dev --workspace @game/api",
@@ -10,24 +13,29 @@
     "test": "tsx --test tests/*.test.ts",
     "ai:cost": "tsx scripts/ai-cost-report.ts",
     "admin:create": "tsx scripts/create-admin.ts",
+    "admin:seed": "tsx scripts/seed-superadmin.ts",
+    "story:seed-sword": "tsx scripts/seed-sword-story.ts",
     "build": "tsc --noEmit && npm run build --workspace @game/web",
     "start": "npm run start --workspace @game/api"
   },
   "dependencies": {
-    "better-sqlite3": "^12.4.1",
     "dotenv": "^18.0.4",
     "express": "^5.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.3",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^24.6.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "better-sqlite3": "^12.4.1",
     "concurrently": "^9.2.1",
+    "jsdom": "^29.1.1",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vite": "^7.1.9"

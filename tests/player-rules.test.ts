@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadScript } from '../packages/script/src/index.js';
-import { applyEvent, createInitialState } from '../packages/engine/src/index.js';
+import { applyEvent, createInitialState, makeView, searchLocation } from '../packages/engine/src/index.js';
 import { settleWorld } from '../packages/engine/src/activity-log.js';
 
 function setup() {
@@ -60,4 +60,38 @@ test('player action rules filter actions and automatic rules wait until the next
   assert.equal(explored.state.playerIndicators?.stamina.value, 40);
   const later = settleWorld(script, explored.state, explored.state, { kind: 'wait', summary: '等待' });
   assert.equal(later.state.playerIndicators?.stamina.value, 30);
+});
+
+test('new-format story settles two once-only scores, removes an event, reveals an item and awards typed gallery', () => {
+  const { script } = setup();
+  script.playerFields = [];
+  script.storyEvents = [{ id: 'event-first', label: '第一次', detail: '' }];
+  script.storyIndicators = [
+    { id: 'ledger', name: '已执行规则', type: 'tags', initial: [], playerVisible: false, systemRole: 'onceRules' },
+    { id: 'score', name: '分数', type: 'number', initial: 0, min: 0, max: 100, playerVisible: false },
+  ];
+  script.playerRules = [
+    { id: 'first-score', intent: '第一次加分', trigger: 'action', actions: ['wait'], once: true,
+      effects: [{ type: 'changeIndicator', target: 'story', id: 'score', by: 2 }, { type: 'recordStoryEvent', eventId: 'event-first' }] },
+    { id: 'second-score', intent: '第二次加分', trigger: 'action', actions: ['wait'], once: true,
+      effects: [{ type: 'changeIndicator', target: 'story', id: 'score', by: 3 }, { type: 'removeStoryEvent', eventId: 'event-first' }] },
+  ];
+  script.locations = script.locations.map(location => location.id === script.startLocation ? {
+    ...location, items: [{ item: 'game-screenshot', discoverWhen: { storyIndicator: { id: 'score', gte: 5 } },
+      takeWhen: { storyIndicator: { id: 'score', eq: 5 } } }],
+  } : location);
+  script.achievements = [{ id: 'score-five', name: '五分', description: '',
+    condition: { storyIndicator: { id: 'score', gte: 5 } } }];
+  const start = createInitialState(script, {});
+  assert.deepEqual(start.player, {});
+  const first = settleWorld(script, start, start, { kind: 'wait', summary: '等待' });
+  assert.equal(first.state.storyIndicators?.score.value, 5);
+  assert.deepEqual(first.state.storyIndicators?.ledger.value, ['first-score', 'second-score']);
+  assert.deepEqual(first.state.storyEventFlags, []);
+  assert.ok(first.state.awardedGallery.some(entry => entry.id === 'score-five'));
+  const found = searchLocation(script, first.state);
+  assert.deepEqual(found.discovered, ['game-screenshot']);
+  assert.equal(makeView(script, found.state).location?.items[0]?.canTake, true);
+  const again = settleWorld(script, found.state, found.state, { kind: 'wait', summary: '再次等待' });
+  assert.equal(again.state.storyIndicators?.score.value, 5);
 });

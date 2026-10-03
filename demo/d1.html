@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>迷雾酒馆 · 对话游戏 Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 15px/1.8 "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #16161f; color: #e8e8f0;
+         display: flex; justify-content: center; min-height: 100vh; }
+  #game { width: 100%; max-width: 540px; display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 14px 16px; border-bottom: 1px solid #2c2c3e;
+           display: flex; align-items: center; gap: 10px; }
+  .badge { font-size: 12px; padding: 2px 10px; border-radius: 10px;
+           background: #4a3a1a; color: #ffd28a; white-space: nowrap; }
+  progress { flex: 1; height: 8px; }
+  #favorNum { min-width: 26px; text-align: right; }
+  #restart { background: none; border: 1px solid #4a4a6a; color: #aaa;
+             border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; }
+  .npc { background: #26263a; border-radius: 12px; padding: 12px 14px;
+         margin-bottom: 14px; white-space: pre-wrap; border-left: 3px solid #7c6cff; }
+  .me { color: #8ab4f8; text-align: right; margin: 4px 0 14px; }
+  .sys { color: #7a7a8e; text-align: center; font-size: 12px; margin: 8px 0; }
+  .typing::after { content: "▍"; animation: blink .7s infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #choices { padding: 4px 16px 10px; display: flex; flex-direction: column; gap: 8px; }
+  #choices button { padding: 10px 12px; background: #2e2e48; color: #e8e8f0;
+        border: 1px solid #4a4a6a; border-radius: 8px; cursor: pointer;
+        text-align: left; font-size: 14px; }
+  #choices button:hover { background: #3a3a5a; border-color: #7c6cff; }
+  #inputRow { display: flex; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid #2c2c3e; }
+  #msg { flex: 1; padding: 10px 12px; background: #26263a; border: none;
+         border-radius: 8px; color: #e8e8f0; }
+  #msg:focus { outline: 1px solid #7c6cff; }
+  #inputRow > button { padding: 10px 18px; background: #7c6cff; border: none;
+         border-radius: 8px; color: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="game">
+  <header>
+    <span class="badge" id="stageTag">序幕</span>
+    好感 <progress id="favor" value="30" max="100"></progress>
+    <span id="favorNum">30</span>
+    <button id="restart" onclick="restart()">重开</button>
+  </header>
+  <main id="log"></main>
+  <div id="choices"></div>
+  <div id="inputRow">
+    <input id="msg" placeholder="自由输入行动，或点上方选项…"
+           onkeydown="if(event.key==='Enter')onSend()">
+    <button onclick="onSend()">→</button>
+  </div>
+</div>
+
+<script>
+/* ====== 配置区：MOCK=true 无需任何后端，双击即玩 ====== */
+const MOCK = true;
+const API_URL = 'http://localhost/v1/chat-messages';  // Dify 地址
+const API_KEY = 'app-xxxxxxxx';                       // API 密钥
+
+const STAGE_TAG = { opening: '序幕', talking: '初识', secret: '秘密', finale: '终章' };
+let favor = 30, stage = 'opening', turns = 0, over = false;
+let convId = localStorage.getItem('convId') || '';
+const uid = localStorage.getItem('uid')
+  || ('u' + Date.now() + Math.random().toString(36).slice(2, 8));
+localStorage.setItem('uid', uid);
+
+const $ = id => document.getElementById(id);
+const log = $('log');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
+
+function addMsg(html, cls) {
+  const p = document.createElement('p');
+  p.className = cls; p.innerHTML = html;
+  log.appendChild(p); log.scrollTop = log.scrollHeight;
+  return p;
+}
+
+/* ---- 模拟引擎：本地扮演"Dify 后端"，返回同样的 JSON ---- */
+function mockEngine(query) {
+  turns++;
+  let delta = 5;
+  if (/谢|夸|请|帮|笑|温柔|礼貌|蜂蜜|怀表|接|郑重/.test(query)) delta = 10;
+  else if (/骂|蠢|滚|拍桌|怒|吼|抢|偷|砸/.test(query)) delta = -15;
+
+  favor = Math.max(0, Math.min(100, favor + delta));
+  let dialogue, choices = [], gameOver = false;
+
+  if (stage === 'opening') {
+    stage = 'talking';
+    dialogue = '雨声被木门隔在身后。柜台后的白发店主头也不抬，只慢慢擦着一只酒杯。\n'
+      + '「深夜上门的客人，不是避雨，就是寻人。」她终于抬眼看你，'
+      + (delta > 5 ? '目光里带着一丝兴味' : '语气不咸不淡') + '，「你是哪一种？」';
+    choices = ['「我在找一个失踪的学者。」', '「路过避雨，来杯蜂蜜酒。」', '在角落坐下，静静观察她'];
+  } else if (stage === 'talking' && favor >= 55) {
+    stage = 'secret';
+    dialogue = '擦杯子的手停了。\n「那件事……」她压低声音，从柜台底下摸出一把黄铜钥匙推到你面前，'
+      + '「三楼最里面的房间。他走前交代过：如果有后来人问起，把钥匙交给『懂得尊重的人』。」\n'
+      + '（好感度 ≥55，剧情推进由代码里的确定性规则触发，LLM 无权插手）';
+    choices = ['接过钥匙，上三楼', '「你为什么愿意帮我？」', '先把酒钱付了，郑重道谢'];
+  } else if (stage === 'secret' && favor >= 80) {
+    stage = 'finale'; gameOver = true;
+    dialogue = '阁楼积着薄灰。书桌上摊开的手记，最后一页只有一行字——\n'
+      + '「如果你读到这里，说明这座酒馆里，还有人值得信任。」\n'
+      + '窗外，雨停了。\n—— 结局 A · 知情者 ——\n'
+      + '（好感度 ≥80 达成的结局。把同样的数值规则搬进 Dify 的代码节点，效果一致且永不漂移）';
+  } else {
+    const variants = [
+      '「客人话不多。」她又给你斟了一杯，「雨要下一整夜，不急。」',
+      '炉火噼啪作响。她瞥你一眼：「想让人开口，得先学会听。」',
+      '「明天再问吧。」她转身去擦酒瓶，背影却似乎松动了几分。'
+    ];
+    dialogue = variants[turns % 3];
+    if (delta < 0) dialogue += '\n（她明显不高兴了，好感度在下降）';
+    if (stage === 'talking' && favor >= 45) dialogue += '\n（她似乎在犹豫什么……好感度还差一点）';
+    if (stage === 'secret' && favor < 80)  dialogue += '\n（钥匙在你手心发烫，她的信任还没完全给你）';
+    choices = ['继续打听学者的下落', '「这家酒馆有什么故事吗？」', '安静地喝完这杯酒'];
+  }
+  return { dialogue, favorability: favor, stage, choices, game_over: gameOver };
+}
+async function mockWithDelay(q) { await sleep(600); return mockEngine(q); }
+
+/* ---- 真实引擎：调 Dify /v1/chat-messages ---- */
+async function realEngine(query) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      inputs: {}, query, response_mode: 'blocking',
+      conversation_id: convId, user: uid
+    })
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  convId = data.conversation_id;
+  localStorage.setItem('convId', convId);
+  const t = data.answer.replace(/```(json)?/g, '').trim();
+  return JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+}
+
+/* ---- 主循环：两种后端共用 ---- */
+async function turn(input, silent) {
+  if (over) return;
+  if (!silent) addMsg(esc(input), 'me');
+  $('choices').innerHTML = '';
+  const tip = addMsg('', 'npc typing');
+  try {
+    const g = MOCK ? await mockWithDelay(input) : await realEngine(input);
+    tip.remove();
+    render(g);
+  } catch (e) {
+    tip.remove();
+    addMsg('出错了：' + esc(e.message), 'sys');
+  }
+}
+
+function render(g) {
+  favor = g.favorability; stage = g.stage;
+  $('favor').value = favor; $('favorNum').textContent = favor;
+  $('stageTag').textContent = STAGE_TAG[stage] || stage;
+
+  const p = addMsg('', 'npc');
+  let i = 0;
+  const timer = setInterval(() => {                       // 打字机效果
+    p.textContent = g.dialogue.slice(0, ++i);
+    log.scrollTop = log.scrollHeight;
+    if (i >= g.dialogue.length) clearInterval(timer);
+  }, 24);
+
+  if (g.game_over) {
+    over = true;
+    setTimeout(() => addMsg('—— 游戏结束，点「重开」再来一局 ——', 'sys'),
+               g.dialogue.length * 24 + 300);
+    return;
+  }
+  const box = $('choices');
+  (g.choices || []).forEach(c => {
+    const b = document.createElement('button');
+    b.textContent = c;
+    b.onclick = () => turn(c);
+    box.appendChild(b);
+  });
+}
+
+function onSend() {
+  const q = $('msg').value.trim();
+  if (!q || over) return;
+  $('msg').value = '';
+  turn(q);
+}
+function restart() { localStorage.removeItem('convId'); location.reload(); }
+
+/* 开场 */
+turn('（推开酒馆的门）', true);
+</script>
+</body>
+</html>

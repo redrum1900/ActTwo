@@ -26,6 +26,16 @@ test('upstream SSE joins split events and returns usage without control data in 
   assert.equal(result.finishReason, 'stop');
 });
 
+test('missing token fields stay unknown while provider cache write and read counts are preserved', async () => {
+  const { readChatCompletionStream } = await import('../apps/api/src/ai-stream.js');
+  const result = await readChatCompletionStream(new Response(JSON.stringify({ choices: [{ message: { content: '你好' } }],
+    usage: { prompt_tokens_details: { cached_tokens: 8, cache_write_tokens: 3 } } })), () => {});
+  assert.equal(result.usage?.promptTokens, undefined);
+  assert.equal(result.usage?.completionTokens, undefined);
+  assert.equal(result.usage?.cachedTokens, 8);
+  assert.equal(result.usage?.cacheWriteTokens, 3);
+});
+
 test('message extractor emits only decoded NPC text across escaped and UTF-8 fragments', async () => {
   const module = await import('../apps/api/src/ai-stream.js').catch(() => ({} as { createMessageDeltaExtractor?: unknown }));
   assert.equal(typeof module.createMessageDeltaExtractor, 'function');

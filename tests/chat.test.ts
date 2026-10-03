@@ -8,6 +8,21 @@ import { loadScript } from '../packages/script/src/index.js';
 
 const story = loadScript('sword-and-screen');
 
+test('world book always and triggered entries follow explicit type while legacy entries retain keyword behavior', () => {
+  const script = structuredClone(story);
+  script.npcs[0].lore = [
+    { id: 'always', name: '常驻', type: 'always', keywords: ['从未提到'], content: '常驻内容' },
+    { id: 'triggered', name: '触发', type: 'triggered', keywords: ['剑道'], content: '触发内容' },
+    { id: 'legacy-always', keywords: [], content: '旧常驻' },
+    { id: 'legacy-triggered', keywords: ['摄影'], content: '旧触发' },
+  ];
+  const state = createInitialState(script, { name: '阿言' });
+  const context = deriveChatContext(script, state, script.npcs[0], '今天好吗');
+  assert.deepEqual(buildAIState(context).npc.relevantLore, ['常驻内容', '旧常驻']);
+  assert.deepEqual(buildAIState({ ...context, text: '聊聊剑道和摄影' }).npc.relevantLore,
+    ['常驻内容', '触发内容', '旧常驻', '旧触发']);
+});
+
 test('one structured reply triggers an NPC semantic event', async () => {
   const state = createInitialState(story, { name: '阿言' });
   let generated = 0; let rewritten = 0;
@@ -181,7 +196,7 @@ test('Su Nian keeps conditional psychological and behavioral details within each
   assert.ok(restaurant.includes('主动谈训练'));
   state.npcIndicators!['su-nian'].visitedHerHome.value = true;
   state.itemStates['practice-note'].owner = 'player';
-  state.itemStates['practice-note'].tags.push('获准阅读');
+  state.storyEventFlags.push(structuredClone(game.storyEvents.find((entry) => entry.label === '获准阅读训练笔记')!));
   const home = deriveNpcSnapshot(game, state, 'su-nian').persona;
   assert.ok(home.includes('认真读过那本笔记'));
   assert.ok(home.includes('个人边界'));

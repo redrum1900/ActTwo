@@ -1,0 +1,106 @@
+[
+  {
+    "id": "close-talk", "intent": "玩家真诚地表达关心、亲近或理解，普通寒暄和无内容的重复消息不算",
+    "trigger": "semantic", "intentDescription": "真诚关心苏念或认真回应她的感受；不能因普通聊天加分",
+    "positiveExamples": ["我很在意你刚才的感受", "如果你紧张我们可以慢慢来"],
+    "negativeExamples": ["你好", "继续聊", "在吗"], "priority": 1, "exclusiveGroup": "affection-bonus",
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 2 }]
+  },
+  {
+    "id": "share-screenshot", "intent": "分享并肩作战截图并回忆那场比赛", "trigger": "semantic", "once": true,
+    "keywords": ["截图", "比赛"],
+    "when": { "all": [{ "indicator": { "id": "metInPerson", "eq": false } }, { "hasItem": { "owner": "player", "item": "game-screenshot" } }] },
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 8 }, { "type": "revealPlayerItem", "npc": "su-nian", "item": "game-screenshot" }],
+    "narration": "苏念认出那场比赛，忍不住聊起当时的配合。"
+  },
+  {
+    "id": "confession", "intent": "玩家首次明确表达喜欢苏念", "trigger": "semantic", "once": true, "priority": 8,
+    "exclusiveGroup": "affection-bonus", "keywords": ["喜欢你", "想见你"],
+    "negativeExamples": ["喜欢这款游戏", "我喜欢这张截图"],
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 7 }, { "type": "addIndicatorTag", "id": "relationshipTags", "tag": "曾被表白" }, { "type": "recordStoryEvent", "eventId": "6a541eba-a918-4a7d-b7b6-17b04715fed0" }],
+    "replyCue": { "applied": "苏念会短暂宕机、转移话题，不会立刻作出承诺。" },
+    "narration": "你坦白了心意，苏念一时不知道如何回答。"
+  },
+  {
+    "id": "confession-again", "intent": "再次认真表达喜欢苏念", "trigger": "semantic", "priority": 7,
+    "exclusiveGroup": "affection-bonus", "when": { "storyEvent": "6a541eba-a918-4a7d-b7b6-17b04715fed0" },
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 3 }],
+    "replyCue": { "applied": "她记得之前的告白，不会像第一次那样完全无措。" }
+  },
+  {
+    "id": "thoughtful", "intent": "认真记住苏念说过的事、给她台阶或替她解围", "trigger": "semantic", "priority": 6,
+    "exclusiveGroup": "affection-bonus", "positiveExamples": ["我记得你说过你不喜欢被催促", "不用勉强，你可以慢慢说"],
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 6 }],
+    "replyCue": { "applied": "她感到被理解，但不一定当面承认。" }
+  },
+  {
+    "id": "familiar-teasing", "intent": "用熟悉的玩笑回敬调侃，不是真正贬低或施压", "trigger": "semantic", "priority": 4,
+    "exclusiveGroup": "affection-bonus", "positiveExamples": ["又嘴硬了吧，你才是最会偷偷关心人的"],
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 4 }],
+    "replyCue": { "applied": "她顺势反击，语气有熟人的轻松。" }
+  },
+  {
+    "id": "meet-in-person", "intent": "关系自然发展到首次见面", "trigger": "automatic", "once": true,
+    "when": { "indicator": { "id": "affection", "gte": 30 } },
+    "effects": [{ "type": "setIndicator", "id": "metInPerson", "value": true }, { "type": "setIndicatorVisibility", "id": "metInPerson", "visible": true }, { "type": "moveNpc", "locationId": "老街饭店" }],
+    "narration": "你们约好了在老街饭店见面。"
+  },
+  {
+    "id": "give-space-at-dinner", "intent": "饭店见面时注意到她紧张，给她时间和选择空间", "trigger": "semantic", "once": true,
+    "priority": 7, "exclusiveGroup": "affection-bonus", "candidateWhen": { "indicator": { "id": "metInPerson", "eq": true } },
+    "when": { "all": [{ "indicator": { "id": "metInPerson", "eq": true } }, { "indicator": { "id": "visitedHerHome", "eq": false } }] },
+    "positiveExamples": ["不用紧张，慢慢来，你来选想吃什么"],
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 6 }, { "type": "addIndicatorTag", "id": "relationshipTags", "tag": "初见被尊重" }],
+    "narration": "你给苏念足够的时间，她终于自然地和你对视。"
+  },
+  {
+    "id": "accept-her-two-sides", "intent": "认真告诉苏念，线上活泼与线下安静都是真实的她", "trigger": "semantic", "once": true,
+    "priority": 8, "exclusiveGroup": "affection-bonus", "candidateWhen": { "indicator": { "id": "metInPerson", "eq": true } },
+    "when": { "indicator": { "id": "metInPerson", "eq": true } },
+    "positiveExamples": ["线上和线下两个都是真实的你"],
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 8 }, { "type": "addIndicatorTag", "id": "relationshipTags", "tag": "两面都被接纳" }],
+    "narration": "她意识到不必把屏幕内外的自己分开。"
+  },
+  {
+    "id": "ask-kendo", "intent": "询问苏念是否练习剑道", "trigger": "semantic", "once": true,
+    "candidateWhen": { "indicator": { "id": "metInPerson", "eq": true } },
+    "when": { "indicator": { "id": "metInPerson", "eq": true } },
+    "positiveExamples": ["你练过剑道吗？"],
+    "effects": [{ "type": "recordStoryEvent", "eventId": "02401204-0c1d-4e3d-a0eb-9da08e994bb4" }, { "type": "changeIndicator", "id": "affection", "by": 4 }],
+    "narration": "她有些意外，终于承认练剑道很多年。"
+  },
+  {
+    "id": "visit-her-home", "intent": "关系自然发展到去她家", "trigger": "automatic", "once": true,
+    "when": { "all": [{ "indicator": { "id": "metInPerson", "eq": true } }, { "indicator": { "id": "affection", "gte": 60 } }] },
+    "effects": [{ "type": "setIndicator", "id": "visitedHerHome", "value": true }, { "type": "setIndicatorVisibility", "id": "visitedHerHome", "visible": true }, { "type": "addTag", "tag": "苏念邀请到家中" }, { "type": "moveNpc", "locationId": "苏念家中" }],
+    "narration": "苏念邀请你到家里继续聊。"
+  },
+  {
+    "id": "charm-gift", "intent": "谈到剑道御守，并接受苏念主动赠送", "trigger": "semantic", "once": true,
+    "candidateWhen": { "indicator": { "id": "visitedHerHome", "eq": true } },
+    "when": { "all": [{ "indicator": { "id": "visitedHerHome", "eq": true } }, { "indicator": { "id": "affection", "gte": 75 } }] },
+    "effects": [{ "type": "transferItem", "from": "npc:su-nian", "to": "player", "item": "kendo-charm" }],
+    "narration": "苏念把珍藏的[剑道御守]送给了你。"
+  },
+  {
+    "id": "read-practice-note", "intent": "谈起训练笔记并征得她同意阅读", "trigger": "semantic", "once": true,
+    "candidateWhen": { "indicator": { "id": "visitedHerHome", "eq": true } },
+    "when": { "hasItem": { "owner": "player", "item": "practice-note" } },
+    "effects": [{ "type": "recordStoryEvent", "eventId": "a8cd49b7-46ab-4ec0-965d-652a2fbdd873" }, { "type": "changeIndicator", "id": "affection", "by": 4 }],
+    "narration": "苏念同意你翻阅[训练笔记]。"
+  },
+  {
+    "id": "talk-about-photo", "intent": "拿着旧照片询问剑道经历", "trigger": "semantic", "once": true,
+    "candidateWhen": { "indicator": { "id": "visitedHerHome", "eq": true } },
+    "when": { "hasItem": { "owner": "player", "item": "old-photo" } },
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 4 }],
+    "narration": "[旧照片]成了你们共同理解那段经历的线索。"
+  },
+  {
+    "id": "understand-practice-note", "intent": "读过获准阅读的训练笔记，认真回应她对真实自我的担忧", "trigger": "semantic", "once": true,
+    "priority": 9, "exclusiveGroup": "affection-bonus", "candidateWhen": { "indicator": { "id": "visitedHerHome", "eq": true } },
+    "when": { "all": [{ "hasItem": { "owner": "player", "item": "practice-note" } }, { "storyEvent": "a8cd49b7-46ab-4ec0-965d-652a2fbdd873" }] },
+    "effects": [{ "type": "changeIndicator", "id": "affection", "by": 8 }, { "type": "addIndicatorTag", "id": "relationshipTags", "tag": "被完整理解" }],
+    "narration": "苏念第一次完整说出自己对这段关系的看法。"
+  }
+]

@@ -48,7 +48,7 @@ test('a saturated AI upstream is retried once and the chat can succeed', async (
   } finally { globalThis.fetch = original; }
 });
 
-test('persistent AI saturation gives a safe retryable error without provider payload', async () => {
+test('persistent AI saturation tries the primary model three times without exposing provider payload', async () => {
   const original = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => {
@@ -58,18 +58,18 @@ test('persistent AI saturation gives a safe retryable error without provider pay
   try {
     await assert.rejects(createChatAdapter({ apiKey: 'test', baseUrl: 'https://example.invalid/v1' }).generate(chatContext()),
       (error: Error & { status?: number }) => error.status === 503 && error.message.includes('繁忙') && !error.message.includes('private upstream detail'));
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
   } finally { globalThis.fetch = original; }
 });
 
-test('AI timeout gives a safe error and does not automatically retry', async () => {
+test('AI timeout retries twice before giving a safe manual-retry error', async () => {
   const original = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => { calls++; throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); };
   try {
     await assert.rejects(createChatAdapter({ apiKey: 'test', baseUrl: 'https://example.invalid/v1' }).generate(chatContext()),
       (error: Error & { status?: number }) => error.status === 504 && error.message.includes('超时') && !error.message.includes('operation was aborted'));
-    assert.equal(calls, 1);
+    assert.equal(calls, 3);
   } finally { globalThis.fetch = original; }
 });
 
@@ -209,10 +209,9 @@ test('timed-out upstream attempt is recorded even without provider usage', async
   globalThis.fetch = async () => { throw new DOMException('timeout', 'TimeoutError'); };
   try {
     await assert.rejects(createChatAdapter({ apiKey: 'test', logPath }).generate(chatContext()));
-    const row = JSON.parse((await readFile(logPath, 'utf8')).trim()) as Record<string, any>;
-    assert.equal(row.outcome, 'timeout');
-    assert.equal(row.httpStatus, null);
-    assert.equal(row.usage, null);
+    const rows = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Record<string, any>);
+    assert.equal(rows.length, 3);
+    assert.ok(rows.every(row => row.outcome === 'timeout' && row.httpStatus === null && row.usage === null));
   } finally { globalThis.fetch = original; await rm(directory, { recursive: true, force: true }); }
 });
 

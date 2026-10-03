@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { creatorApi, type Account, type Project, type ProjectSummary, type Report } from './client.js';
+import { Modal } from 'antd';
+import { confirmAction, promptAction } from '../dialogs.js';
+import { creatorApi, type Project, type ProjectSummary, type Report } from './client.js';
 import { groupedSections, labelOf } from './sections.js';
 import SectionEditor from './SectionEditor.js';
 import ReviewWorkspace from './ReviewWorkspace.js';
@@ -11,14 +13,16 @@ import { patchManifest } from './section-forms.js';
 import { referencedStoryEventIds } from './story-event-references.js';
 import { conditionSourcesFromSections } from './condition-sources.js';
 import { patchItemsImages, saveWithItemImages } from './item-image-save.js';
+import ImportStoryModal from './ImportStoryModal.js';
+import PlaytestDrawer from './PlaytestDrawer.js';
+import { useAccount } from '../AccountGate.js';
 import './creator.css';
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '操作失败，请稍后重试'; }
 
 export default function CreatorApp() {
-  const [account, setAccount] = useState<Account | null>(null);
+  const { account, loading, login, register, logout } = useAccount();
   const [workspace, setWorkspace] = useState<CreatorWorkspace>('library');
-  const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [path, setPath] = useState('manifest.json');
@@ -35,6 +39,8 @@ export default function CreatorApp() {
   const [templateId, setTemplateId] = useState('');
   const [templates, setTemplates] = useState<{ id: string; title: string }[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showPlaytests, setShowPlaytests] = useState(false);
   const draftRef = useRef(draft);
   const coverFileRef = useRef<File | null>(null);
   const itemImageFilesRef = useRef<Record<string, File>>({});
@@ -47,14 +53,13 @@ export default function CreatorApp() {
   const [showDirtyChoice, setShowDirtyChoice] = useState(false);
 
   const refreshList = async () => { const data = await creatorApi.list(); setProjects(data.projects); };
-  useEffect(() => { void creatorApi.me().then(async user => { setAccount(user);
-    const next = workspaceForPath(user.role, window.location.pathname); setWorkspace(next);
+  useEffect(() => { if (!account) return;
+    const next = workspaceForPath(account.role, window.location.pathname); setWorkspace(next);
     if (next === 'library') {
       if (window.location.pathname === '/creator/review') window.history.replaceState({}, '', '/creator');
-      await refreshList();
+      void refreshList();
     }
-  })
-    .catch(() => {}).finally(() => setLoading(false)); }, []);
+  }, [account?.id]);
 
   const openProject = (next: Project) => {
     setProject(next); projectRef.current = next;
@@ -88,9 +93,9 @@ export default function CreatorApp() {
     setReport(null);
   };
   const isDirty = () => hasUnsavedChanges(draftRef.current, savedContent.current) || !!coverFileRef.current || Object.keys(itemImageFilesRef.current).length > 0;
-  const resetDraft = () => {
+  const resetDraft = async () => {
     if (!isDirty()) return;
-    if (!window.confirm('放弃当前配置中未保存的修改？')) return;
+    if (!await confirmAction('放弃当前配置中未保存的修改？', true)) return;
     discardDraft();
   };
   const discardDraft = () => {
@@ -203,8 +208,8 @@ export default function CreatorApp() {
   };
   const authenticate = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage('');
-    try { const user = authMode === 'login' ? await creatorApi.login(username, password) : await creatorApi.register(username, password);
-      setAccount(user); setPassword('');
+    try { const user = authMode === 'login' ? await login(username, password) : await register(username, password);
+      setPassword('');
       const next = workspaceForPath(user.role, window.location.pathname); setWorkspace(next);
       if (next === 'library') {
         if (window.location.pathname === '/creator/review') window.history.replaceState({}, '', '/creator');
@@ -219,18 +224,25 @@ export default function CreatorApp() {
     catch (error) { setMessage(errorText(error)); }
   };
   const addNpc = () => void runWithDraftGuard(async () => {
-    const id = prompt('NPC ID（英文小写、数字、短横线）'); if (!id) return;
-    const name = prompt('NPC 名称'); if (!name) return;
-    const next = await creatorApi.addNpc(project!.id, id.trim(), name.trim());
+    const id = await promptAction('NPC ID（英文小写、数字、短横线）'); if (!id) return;
+    const name = await promptAction('NPC 名称'); if (!name) return;
+    const next = await creatorApi.addNpc(project!.id, id, name);
     setProject(next); projectRef.current = next;
-    await switchPath(`npcs/${id.trim()}/base.json`);
+    await switchPath(`npcs/${id}/base.json`);
   });
   const removeNpc = (id: string) => void runWithDraftGuard(async () => {
-    if (!confirm(`确定移除 NPC「${id}」及其全部配置？此操作不能撤销。`)) return;
+    if (!await confirmAction(`确定移除 NPC「${id}」及其全部配置？此操作不能撤销。`, true)) return;
     const next = await creatorApi.removeNpc(project!.id, id);
     openProject(next);
   });
   const validate = () => void runWithDraftGuard(async () => { setReport(await creatorApi.validate(project!.id)); });
+  const migrateStats = () => void runWithDraftGuard(async () => {
+    if (!await confirmAction('迁移旧属性及其规则引用？若遇到指标 ID 冲突，不会保存任何修改。')) return;
+    const active = projectRef.current!;
+    const revisions = Object.fromEntries(Object.entries(active.sections).map(([sectionPath, section]) => [sectionPath, section.revision]));
+    openProject(await creatorApi.migrateStats(active.id, revisions));
+    setMessage('旧属性已迁移。请检查各指标及规则后保存／提交。');
+  });
   const submit = () => void runWithDraftGuard(async () => {
     const check = await creatorApi.validate(project!.id); setReport(check);
     if (check.errors.length) { setMessage('校验未通过，不能提交审核。'); return; }
@@ -238,7 +250,7 @@ export default function CreatorApp() {
     const next = await creatorApi.get(project!.id); projectRef.current = next; setProject(next);
   });
   const deleteProject = () => void runWithDraftGuard(async () => {
-    if (!confirm(`确定删除「${project!.title}」？发布版本会下架，草稿将无法恢复。`)) return;
+    if (!await confirmAction(`确定删除「${project!.title}」？发布版本会下架，草稿将无法恢复。`, true)) return;
     await creatorApi.delete(project!.id); setProject(null); projectRef.current = null;
     window.history.replaceState({}, '', '/creator'); await refreshList();
   });
@@ -257,11 +269,11 @@ export default function CreatorApp() {
   })();
 
   if (loading) return <div className="creator-loading">正在打开创作中心…</div>;
-  return <div className="creator-app">
+  return <div className={`creator-app${project ? ' creator-app-editing' : ''}`}>
     <header className="creator-header"><a className="creator-brand" href="/">叙事档案 <span>／ 创作中心</span></a>
       {account && <CreatorNavigation role={account.role} workspace={workspace} onLibrary={goLibrary} onReview={goReview} />}
-      <div className="creator-header-right"><a href="/">玩家入口 ↗</a>{account && <><span>{account.username}{account.role === 'admin' ? ' · 管理员' : ''}</span><button onClick={() => void runWithDraftGuard(async () => {
-        await creatorApi.logout(); setAccount(null); setProject(null); projectRef.current = null;
+      <div className="creator-header-right"><a href="/">玩家入口 ↗</a>{account && <><a href={account.role === 'admin' ? '/creator/usage' : '/usage'}>AI 用量</a><span>{account.username}{account.role === 'admin' ? ' · 管理员' : ''}</span><button onClick={() => void runWithDraftGuard(async () => {
+        await logout(); setProject(null); projectRef.current = null;
         setWorkspace('library'); window.history.replaceState({}, '', '/creator'); })}>退出</button></>}</div></header>
     {!account ? <main className="creator-auth"><div className="creator-auth-copy"><div className="creator-kicker">WRITE YOUR OWN WORLD</div>
       <h1>让故事，<br /><em>从这里开始。</em></h1><p>创建角色、地点和规则，随时保存草稿。完成校验后提交审核，通过后故事会出现在玩家目录。</p>
@@ -280,18 +292,20 @@ export default function CreatorApp() {
         {message && <p className="creator-error" role="alert">{message}</p>}
         {projects.length ? <div className="creator-project-grid">{projects.map(entry => <button key={entry.id} className="creator-project-card"
           onClick={() => void creatorApi.get(entry.id).then(openProject).catch(error => setMessage(errorText(error)))}>
-          <span className="creator-project-state">{reviewStatusLabel(entry)}</span><h2>{entry.title}</h2><span>{entry.id}</span>
+          <span className="creator-project-state">{reviewStatusLabel(entry)}</span><h2>{entry.title}</h2>{entry.subtitle && <span>{entry.subtitle}</span>}
           <footer><span>最近编辑 {new Date(entry.updatedAt).toLocaleDateString('zh-CN')}</span><strong>继续编辑 ↗</strong></footer></button>)}</div>
           : <div className="creator-library-empty"><span>✳</span><h2>还没有故事</h2><p>从一张空白纸开始，或复制内置故事作为模板。</p></div>}
-        {showCreate && <div className="creator-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowCreate(false); }}><form className="creator-modal" onSubmit={create}>
-          <div className="creator-kicker">NEW STORY</div><h2>建立一个新世界</h2>
+        <Modal className="creator-form-dialog" title="建立一个新世界" open={showCreate} onCancel={() => setShowCreate(false)}
+          footer={null} destroyOnHidden><form className="creator-modal" onSubmit={create}>
+          <div className="creator-kicker">NEW STORY</div>
           <label>故事名称<input value={newTitle} onChange={event => setNewTitle(event.target.value)} maxLength={100} required placeholder="例如：雨夜来信" /></label>
           <label>从模板开始<select value={templateId} onChange={event => setTemplateId(event.target.value)}><option value="">空白故事</option>
             {templates.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
           <div className="creator-modal-actions"><button type="button" onClick={() => setShowCreate(false)}>取消</button><button className="creator-primary" type="submit">创建故事 ↗</button></div>
-          {message && <p className="creator-error" role="alert">{message}</p>}</form></div>}</main>
-        : <div className="creator-workspace"><aside className="creator-sidebar"><button className="creator-back" onClick={goLibrary}>← 我的故事</button>
-          <div className="creator-story-heading"><div className="creator-kicker">STORY / {project.id}</div><h1>{project.title}</h1><span>{reviewStatusLabel(project)} · 草稿可继续编辑</span></div>
+          {message && <p className="creator-error" role="alert">{message}</p>}</form></Modal></main>
+        : <div className="creator-workspace"><aside className="creator-sidebar"><div className="creator-sidebar-intro">
+          <button className="creator-back" onClick={goLibrary}>← 我的故事</button>
+          <div className="creator-story-heading"><div className="creator-kicker">STORY / {project.title}</div><h1>{project.title}</h1><span>{reviewStatusLabel(project)} · 草稿可继续编辑</span></div></div>
           <nav aria-label="配置项"><div className="creator-nav-title">剧本</div>{groups!.root.map(entry => <button key={entry} className={path === entry ? 'active' : ''} onClick={() => void switchPath(entry)}>{labelOf(entry).name}</button>)}
             <div className="creator-nav-title">玩家</div>{groups!.player.map(entry => <button key={entry} className={path === entry ? 'active' : ''} onClick={() => void switchPath(entry)}>{labelOf(entry).name}</button>)}
             <div className="creator-nav-title creator-nav-title-between">角色 <button onClick={addNpc} aria-label="添加 NPC">＋</button></div>
@@ -301,7 +315,7 @@ export default function CreatorApp() {
                 onClick={() => void switchPath(entry)}>{labelOf(entry).name}</button>)}</div>)}</nav></aside>
           <main className="creator-main"><div className="creator-toolbar"><span className={`creator-save-status ${saveState}`}>
             {saveState === 'saved' ? '✓ 已保存' : saveState === 'dirty' ? '● 待保存' : saveState === 'saving' ? '◌ 保存中' : saveState === 'conflict' ? '! 编辑冲突' : '! 保存失败'}</span>
-            <div><button onClick={validate}>校验配置</button><button className="creator-primary" disabled={project.review?.status === 'pending'} onClick={submit}>
+            <div><button onClick={() => setShowPlaytests(true)}>试玩</button>{account.role === 'admin' && account.username === 'superadmin' && <button onClick={() => void runWithDraftGuard(async () => setShowImport(true))}>智能导入</button>}<button onClick={validate}>校验配置</button><button className="creator-primary" disabled={project.review?.status === 'pending'} onClick={submit}>
               {project.review?.status === 'pending' ? '等待审核' : '提交审核 ↗'}</button></div></div>
             {project.review?.status === 'rejected' && project.review.rejectionReason && <div className="creator-review-reason" role="status">
               <strong>上次提交未通过</strong><p>{project.review.rejectionReason}</p></div>}
@@ -310,7 +324,7 @@ export default function CreatorApp() {
             {report && <div className="creator-report"><strong>{report.errors.length ? `校验发现 ${report.errors.length} 个错误` : '校验通过，可以提交审核'}</strong>
               {[...report.errors, ...report.warnings].map((issue, index) => <button key={index} onClick={() => { const target = Object.keys(project.sections).find(entry => issue.path.startsWith(entry)); if (target) void switchPath(target); }}>
                 <code>{issue.path}</code> {issue.message}</button>)}</div>}
-            <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} savedLocations={savedLocations} savedStoryEvents={savedStoryEvents}
+            <SectionEditor key={path} path={path} content={draft} onChange={updateDraft} onMigrateStats={migrateStats} savedLocations={savedLocations} savedStoryEvents={savedStoryEvents}
               referencedStoryEventIds={referencedStoryEventIds(project.sections)}
               conditionSources={conditionSourcesFromSections(project.sections)}
               projectId={project.id} coverFile={coverFile} onCoverFileChange={updateCoverFile}
@@ -320,10 +334,16 @@ export default function CreatorApp() {
                 <button className="creator-primary" type="button" disabled={saveState === 'saving' || (!hasUnsavedChanges(draft, savedContent.current) && !coverFile && !Object.keys(itemImageFiles).length)} onClick={() => void save()}>保存</button></div></div>
             <div className="creator-bottom-actions"><button className="creator-danger-link" onClick={deleteProject}>删除这个故事</button>
               {project.publishedAt && <a href={`/`} target="_blank" rel="noreferrer">前往玩家目录 ↗</a>}</div></main></div>}
-    {showDirtyChoice && <div className="creator-modal-backdrop" role="presentation"><div className="creator-modal" role="dialog" aria-modal="true" aria-labelledby="creator-unsaved-title">
-      <div className="creator-kicker">UNSAVED CHANGES</div><h2 id="creator-unsaved-title">当前配置尚未保存</h2><p>离开后，未保存的修改会丢失。</p>
+    {showImport && project && <ImportStoryModal projectId={project.id} onClose={() => setShowImport(false)} onApplied={next => {
+      openProject({ ...next, review: project.review }); setShowImport(false); setMessage('导入结果已写入当前故事草稿，请检查后提交审核。');
+    }} />}
+    {showPlaytests && project && <PlaytestDrawer projectId={project.id} onClose={() => setShowPlaytests(false)}
+      unsaved={saveState !== 'saved' || hasUnsavedChanges(draft, savedContent.current) || !!coverFile || !!Object.keys(itemImageFiles).length} />}
+    <Modal className="creator-form-dialog" title="当前配置尚未保存" open={showDirtyChoice} onCancel={() => chooseDirty('cancel')}
+      footer={null} closable={false} mask={{ closable: false }} destroyOnHidden><div className="creator-modal">
+      <div className="creator-kicker">UNSAVED CHANGES</div><p>离开后，未保存的修改会丢失。</p>
       <div className="creator-modal-actions"><button type="button" onClick={() => chooseDirty('cancel')}>继续编辑</button>
         <button type="button" onClick={() => chooseDirty('discard')}>放弃修改</button>
-        <button className="creator-primary" type="button" onClick={() => chooseDirty('save')}>保存并继续</button></div></div></div>}
+        <button className="creator-primary" type="button" onClick={() => chooseDirty('save')}>保存并继续</button></div></div></Modal>
   </div>;
 }

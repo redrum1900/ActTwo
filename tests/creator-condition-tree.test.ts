@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { patchCondition, conditionIssues, changeConditionKind, type ConditionSources } from '../apps/web/src/creator/condition-tree.js';
+import * as tree from '../apps/web/src/creator/condition-tree.js';
 import { conditionSourcesFromSections } from '../apps/web/src/creator/condition-sources.js';
+import { pruneLegacyCondition } from '@game/contracts';
 
 const sources: ConditionSources = {
   storyEvents: [{ id: 'event-one', label: '首次见面' }], items: [{ id: 'item-one', name: '照片' }],
@@ -57,13 +59,80 @@ test('condition options come from saved sections, including items and story even
   assert.deepEqual(conditionIssues({ hasItem: { owner: 'npc:npc-one', item: 'item-one' } }, built), []);
 });
 
+test('saved NPC initial items are available to exclude from location placement choices', () => {
+  const built = conditionSourcesFromSections({
+    'items.json': { content: JSON.stringify([{ id: 'charm', name: '御守' }]) },
+    'npcs/su-nian/base.json': { content: JSON.stringify({ id: 'su-nian', name: '苏念', initialItems: ['charm'] }) },
+  });
+  assert.deepEqual((built.npcs[0] as { initialItems?: string[] }).initialItems, ['charm']);
+});
+
+test('saved location item placements are available to exclude from NPC starting items', () => {
+  const built = conditionSourcesFromSections({
+    'locations.json': { content: JSON.stringify([{ id: 'home', name: '家', items: [{ item: 'photo' }, { item: 'note' }] }]) },
+  });
+  assert.deepEqual(built.locations[0].items, ['photo', 'note']);
+});
+
 test('advanced legacy leaves survive unrelated tree edits unchanged', () => {
   const original = { any: [{ flag: 'legacy' }, { stat: { scope: 'world', id: 'time', gte: 2 } }] } as const;
   const changed = patchCondition(original, [], { type: 'insert', index: 2, value: { storyEvent: 'event-one' } });
   assert.deepEqual((changed as { any: unknown[] }).any.slice(0, 2), original.any);
 });
 
+test('legacy condition leaves are deleted without making an empty gate unconditional', () => {
+  assert.deepEqual(pruneLegacyCondition({ all: [
+    { playerIndicator: { id: 'cursed', eq: true } }, { flag: 'knows-kendo' }, { not: { tag: 'old' } },
+  ] }), { all: [{ playerIndicator: { id: 'cursed', eq: true } }] });
+  assert.deepEqual(pruneLegacyCondition({ flag: 'knows-kendo' }), { any: [] });
+  assert.deepEqual(pruneLegacyCondition({ not: { completedEvent: 'confession' } }), { any: [] });
+});
+
 test('indicator comparisons reject operators incompatible with the indicator type', () => {
   assert.match(conditionIssues({ playerIndicator: { id: 'cursed', gte: 90 } }, sources).join('；'), /布尔指标/);
   assert.deepEqual(conditionIssues({ playerIndicator: { id: 'cursed', eq: true } }, sources), []);
+});
+
+test('typed operator menus cover number, text, tags, date, enum and boolean without incompatible choices', () => {
+  const comparisonOperators = (tree as typeof tree & { comparisonOperators?: (type: string) => string[] }).comparisonOperators;
+  assert.ok(comparisonOperators, 'typed operator list should be available');
+  assert.deepEqual(comparisonOperators('number'), ['eq', 'ne', 'gt', 'gte', 'lt', 'lte']);
+  assert.deepEqual(comparisonOperators('text'), ['eq', 'ne', 'contains', 'notContains']);
+  assert.deepEqual(comparisonOperators('tags'), ['has', 'lacks', 'length']);
+  assert.deepEqual(comparisonOperators('date'), ['eq', 'ne', 'gt', 'gte', 'lt', 'lte']);
+  assert.deepEqual(comparisonOperators('enum'), ['eq', 'ne']);
+  assert.deepEqual(comparisonOperators('boolean'), ['eq', 'ne']);
+});
+
+test('condition sources retain story indicators and opening question types', () => {
+  const built = conditionSourcesFromSections({
+    'story/indicators.json': { content: JSON.stringify([{ id: 'score', name: '分数', type: 'number' }]) },
+    'player-form.json': { content: JSON.stringify([{ id: 'birthday', label: '生日', type: 'date' }]) },
+  });
+  assert.deepEqual(built.storyIndicators, [{ id: 'score', name: '分数', type: 'number', options: undefined }]);
+  assert.deepEqual(built.playerFields, [{ id: 'birthday', label: '生日', type: 'date', options: undefined }]);
+  assert.deepEqual(conditionIssues({ storyIndicator: { id: 'score', gt: 10 } }, built), []);
+  assert.match(conditionIssues({ playerField: { id: 'birthday', contains: '2026' } }, built).join('；'), /日期|比较/);
+});
+
+test('system-managed once ledger is not offered as an author condition', () => {
+  const built = conditionSourcesFromSections({
+    'story/indicators.json': { content: JSON.stringify([
+      { id: 'ledger', name: '已执行规则', type: 'tags', systemRole: 'onceRules' },
+      { id: 'score', name: '分数', type: 'number' },
+    ]) },
+  });
+  assert.deepEqual(built.storyIndicators?.map(entry => entry.id), ['score']);
+});
+
+test('new date comparisons require an author-entered date', () => {
+  const comparison = tree.defaultComparison('date');
+  assert.deepEqual(comparison, { eq: '' });
+  const withDate: ConditionSources = { ...sources, storyIndicators: [{ id: 'day', name: '日期', type: 'date' }] };
+  assert.match(conditionIssues({ storyIndicator: { id: 'day', ...comparison } }, withDate).join('；'), /日期比较值无效/);
+});
+
+test('condition editor flags an empty text operand before save or review', () => {
+  const withText: ConditionSources = { ...sources, playerIndicators: [{ id: 'name', name: '称呼', type: 'text' }] };
+  assert.match(conditionIssues({ playerIndicator: { id: 'name', contains: '' } }, withText).join('；'), /文字比较值无效/);
 });

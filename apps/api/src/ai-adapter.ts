@@ -2,13 +2,21 @@ import { randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import type { ChatAdapter, ChatContext } from './chat-service.js';
 import { deriveNpcSnapshot, evaluateCondition } from '@game/engine';
+import { loreType } from '@game/script/lore';
 import { selectMemory, validateMemory } from './memory-policy.js';
-import { createMessageDeltaExtractor, readChatCompletionStream } from './ai-stream.js';
+import { createMessageDeltaExtractor, readChatCompletionStream, type TokenUsage } from './ai-stream.js';
+import { aiCallRecord, recordAuditSafely, type AiAttribution, type AiAuditSink } from './ai-audit.js';
 
 interface ModelConfig { apiKey?: string; baseUrl?: string; model?: string; logPath?: string;
+  auditSink?: AiAuditSink;
+  streamUsage?: boolean;
+  fallbacks?: { apiKey: string; baseUrl: string; model: string }[];
   promptLayout?: 'dynamic' | 'fixed-prefix';
   temperatures?: Partial<Record<Purpose, number>> }
 interface ResolvedModelConfig { apiKey: string; baseUrl: string; model: string; logPath?: string;
+  auditSink?: AiAuditSink;
+  streamUsage?: boolean;
+  fallbacks: { apiKey: string; baseUrl: string; model: string }[];
   temperatures: Record<Purpose, number> }
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 type Purpose = 'generate' | 'classify' | 'rewrite' | 'summarize';
@@ -25,11 +33,11 @@ export function buildAIState(context: ChatContext) {
   const bag = (owner: string) => Object.entries(state.itemStates).filter(([id, runtime]) => runtime.owner === owner &&
     (owner !== `npc:${npc.id}` || state.knownNpcItems[npc.id]?.includes(id) ||
       (Object.hasOwn(npc.itemVisibility ?? {}, id) && evaluateCondition(npc.itemVisibility?.[id], state, script, npc.id))))
-    .map(([id, runtime]) => ({ name: itemName(context, id), tags: runtime.tags,
+    .map(([id]) => ({ name: itemName(context, id),
       ...(owner === 'player' ? { knownToNpc: state.knownPlayerItems[npc.id]?.includes(id) ?? false } : {}) }));
   const recentTopic = [context.text, ...context.history.slice(-6).map((entry) => entry.text)].join('\n');
   const lore = npc.lore?.filter((entry) => evaluateCondition(entry.when, state, script, npc.id) &&
-    (!entry.keywords.length || entry.keywords.some((keyword) => recentTopic.includes(keyword)))) ?? [];
+    (loreType(entry) === 'always' || entry.keywords.some((keyword) => recentTopic.includes(keyword)))) ?? [];
   return {
     world: script.world,
     player: { profile: state.player, stats: state.playerStats, tags: state.tags, inventory: bag('player') },
@@ -78,9 +86,12 @@ function playerSceneTransition(context: ChatContext): string | null {
 }
 
 async function completion(config: ResolvedModelConfig, messages: Message[], purpose: Purpose, turnId: string,
-  json = false, checkFormat?: (raw: string) => string | null, onContent?: (delta: string) => void): Promise<string> {
+  json = false, checkFormat?: (raw: string) => string | null, onContent?: (delta: string) => void,
+  attribution?: AiAttribution): Promise<string> {
   const callId = randomUUID();
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const providers = [config, ...config.fallbacks];
+  let lastError: AiServiceError | null = null;
+  for (const [providerIndex, provider] of providers.entries()) for (let attempt = 0; attempt < (providerIndex === 0 ? 3 : 1); attempt++) {
     if (attempt) await new Promise((resolve) => setTimeout(resolve, 800));
     const startedAt = new Date().toISOString();
     const started = performance.now();
@@ -89,13 +100,15 @@ async function completion(config: ResolvedModelConfig, messages: Message[], purp
     let responseChars: number | null = null;
     let finishReason: string | null = null;
     let formatError: string | null = null;
-    let usage: { promptTokens: number; completionTokens: number; totalTokens: number; cachedTokens?: number } | null = null;
+    let usage: TokenUsage | null = null;
     let response: Response;
     try {
       try {
-        response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-          body: JSON.stringify({ model: config.model, messages, stream: true, temperature: config.temperatures[purpose],
+        response = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
+          body: JSON.stringify({ model: provider.model, messages, stream: true,
+            ...(config.streamUsage ? { stream_options: { include_usage: true } } : {}),
+            temperature: config.temperatures[purpose],
             ...(json ? { response_format: { type: 'json_object' } } : {}) }),
           signal: AbortSignal.timeout(60000),
         });
@@ -109,7 +122,6 @@ async function completion(config: ResolvedModelConfig, messages: Message[], purp
       httpStatus = response.status;
       if (response.status === 429) {
         outcome = 'rate_limited';
-        if (attempt === 0) continue;
         throw new AiServiceError('AI 服务暂时繁忙，请稍后重试；本次对话未保存。', 503);
       }
       if (!response.ok) {
@@ -117,7 +129,8 @@ async function completion(config: ResolvedModelConfig, messages: Message[], purp
         throw new AiServiceError('AI 服务暂时不可用，请稍后重试；本次对话未保存。', 503);
       }
       let data: Awaited<ReturnType<typeof readChatCompletionStream>>;
-      try { data = await readChatCompletionStream(response, onContent ?? (() => {})); }
+      let buffered = '';
+      try { data = await readChatCompletionStream(response, delta => { buffered += delta; }); }
       catch (error) {
         if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
           outcome = 'timeout';
@@ -136,16 +149,28 @@ async function completion(config: ResolvedModelConfig, messages: Message[], purp
       responseChars = content.length;
       formatError = checkFormat?.(content) ?? null;
       outcome = formatError === 'non_dialogue_content' ? 'invalid_content' : formatError ? 'invalid_format' : 'success';
+      if (!formatError) onContent?.(buffered || content);
       return content;
+    } catch (error) {
+      lastError = error instanceof AiServiceError ? error : new AiServiceError('AI 服务暂时不可用，请手动重试；本次对话未保存。', 503);
+      if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429) break;
     } finally {
+      await recordAuditSafely(config.auditSink, aiCallRecord({
+        ...(attribution ?? { accountId: null, source: 'system', storyId: null, operationId: turnId }),
+        purpose, model: provider.model, providerIndex, startedAt,
+        durationMs: performance.now() - started, httpStatus, outcome,
+        inputTokens: usage?.promptTokens, outputTokens: usage?.completionTokens,
+        cacheWriteTokens: usage?.cacheWriteTokens, cacheReadTokens: usage?.cachedTokens,
+      }));
       if (config.logPath) try {
         await appendFile(config.logPath, `${JSON.stringify({ startedAt, turnId, callId, purpose, attempt: attempt + 1,
-          model: config.model, messageCount: messages.length, requestChars: messages.reduce((sum, message) => sum + message.content.length, 0),
+          model: provider.model, providerIndex, messageCount: messages.length, requestChars: messages.reduce((sum, message) => sum + message.content.length, 0),
           responseChars, finishReason, formatError, durationMs: Math.round(performance.now() - started), httpStatus, outcome, usage })}\n`, { mode: 0o600 });
       } catch { console.warn('AI 请求用量日志写入失败'); }
     }
   }
-  throw new AiServiceError('AI 服务暂时繁忙，请稍后重试；本次对话未保存。', 503);
+  if (lastError) throw new AiServiceError(lastError.message.replace('请稍后重试', '请手动重试').replace('请重试', '请手动重试'), lastError.status);
+  throw new AiServiceError('AI 服务暂时不可用，请手动重试；本次对话未保存。', 503);
 }
 
 function historyMessages(context: ChatContext): Message[] {
@@ -205,7 +230,8 @@ export function createChatAdapter(config: ModelConfig): ChatAdapter {
     rewrite: async (context, draft) => context.appliedEvents.length ? `${context.appliedEvents.map((event) => event.narration ?? event.replyCue?.applied ?? '').join('')}${draft}` : draft,
   };
   const model: ResolvedModelConfig = { apiKey: config.apiKey, baseUrl: config.baseUrl || 'https://api.openai.com/v1',
-    model: config.model || 'Cot-18', logPath: config.logPath,
+    model: config.model || 'Cot-18', logPath: config.logPath, auditSink: config.auditSink, streamUsage: config.streamUsage,
+    fallbacks: config.fallbacks ?? [],
     temperatures: { generate: 0.7, classify: 0.2, rewrite: 0.2, summarize: 0.2, ...config.temperatures } };
   return {
     mode: 'ai',
@@ -221,7 +247,7 @@ export function createChatAdapter(config: ModelConfig): ChatAdapter {
         { role: 'user', content: JSON.stringify({ candidates, recent, playerMessage: context.text }) },
       ], 'classify', context.turnId, true, value => {
         try { parseEventIds(value, allowed); return null; } catch { return 'invalid_event_judgment'; }
-      });
+      }, undefined, context.audit);
       try { return parseEventIds(judged, allowed); }
       catch { throw new AiServiceError('AI 未返回可用的事件判断，请重试；本次对话未保存。', 502); }
     },
@@ -243,7 +269,7 @@ export function createChatAdapter(config: ModelConfig): ChatAdapter {
         { role: 'user', content: context.text }];
       const checkFormat = (value: string) => isNonDialogue(value) ? 'non_dialogue_content' : null;
       const extractor = createMessageDeltaExtractor(onDraft ?? (() => {}));
-      const raw = await completion(model, messages, 'generate', context.turnId, false, checkFormat, (delta) => extractor.push(delta));
+      const raw = await completion(model, messages, 'generate', context.turnId, false, checkFormat, (delta) => extractor.push(delta), context.audit);
       if (isNonDialogue(raw)) throw new AiServiceError('AI 回复内容异常，请稍后重试；本次对话未保存。', 502);
       return { message: replyText(raw), proposedEventIds: [] };
     },
@@ -254,7 +280,7 @@ export function createChatAdapter(config: ModelConfig): ChatAdapter {
           `当前结算状态：${scene(context)}`, `实际生效：${JSON.stringify(context.appliedEvents.map((event) => ({ narration: event.narration, cue: event.replyCue?.applied })))}`,
           `拒绝的提议：${JSON.stringify(context.rejectedIds)}`].join('\n') },
         ...historyMessages(context), { role: 'user', content: `玩家说：${context.text}\n草稿：${draft}\n请按实际生效结果修订。` },
-      ], 'rewrite', context.turnId, false, (value) => isNonDialogue(value) ? 'non_dialogue_content' : null);
+      ], 'rewrite', context.turnId, false, (value) => isNonDialogue(value) ? 'non_dialogue_content' : null, undefined, context.audit);
       if (isNonDialogue(revised)) throw new AiServiceError('AI 回复内容异常，请稍后重试；本次对话未保存。', 502);
       return revised;
     },
@@ -268,7 +294,7 @@ export function createChatAdapter(config: ModelConfig): ChatAdapter {
           .map(({ id, role, text }) => ({ id, speaker: role === 'player' ? '玩家' : context.npc.name, role, text })) }) },
       ], 'summarize', context.turnId, true, value => {
         try { validateMemory(value, sources); return null; } catch { return 'invalid_memory'; }
-      });
+      }, undefined, context.audit);
     },
   };
 }
@@ -279,7 +305,8 @@ export function createCombinedChatAdapter(config: ModelConfig): ChatAdapter {
   const { judge: _judge, ...adapter } = legacy;
   if (!config.apiKey) return { ...adapter, settlementTiming: 'after-reply' };
   const model: ResolvedModelConfig = { apiKey: config.apiKey, baseUrl: config.baseUrl || 'https://api.openai.com/v1',
-    model: config.model || 'Cot-18', logPath: config.logPath,
+    model: config.model || 'Cot-18', logPath: config.logPath, auditSink: config.auditSink, streamUsage: config.streamUsage,
+    fallbacks: config.fallbacks ?? [],
     temperatures: { generate: 0.7, classify: 0.2, rewrite: 0.2, summarize: 0.2, ...config.temperatures } };
   return { ...adapter, settlementTiming: 'after-reply',
     generate: async (context, onDraft) => {
@@ -316,7 +343,7 @@ export function createCombinedChatAdapter(config: ModelConfig): ChatAdapter {
       const extractor = createMessageDeltaExtractor(onDraft ?? (() => {}));
       const raw = await completion(model, messages, 'generate', context.turnId, true,
         value => { try { parse(value); return null; } catch { return 'invalid_combined_response'; } },
-        delta => extractor.push(delta));
+        delta => extractor.push(delta), context.audit);
       try { return parse(raw); }
       catch { throw new AiServiceError('AI 未返回有效的对话和规则结果，请重试；本次对话未保存。', 502); }
     },

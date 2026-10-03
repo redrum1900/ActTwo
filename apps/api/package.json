@@ -11,9 +11,12 @@
     "@game/contracts": "*",
     "@game/engine": "*",
     "@game/script": "*",
-    "better-sqlite3": "^12.4.1",
     "dotenv": "^18.0.4",
     "express": "^5.1.0",
-    "mysql2": "^3.24.5"
+    "mysql2": "^3.24.5",
+    "word-extractor": "^1.0.4"
+  },
+  "devDependencies": {
+    "@types/word-extractor": "^1.0.6"
   }
 }

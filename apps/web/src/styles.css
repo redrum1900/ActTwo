@@ -48,7 +48,20 @@ p { line-height: 1.8; text-wrap: pretty; }
 .brand-mark span { color: var(--accent); }
 .brand-mark small { display: block; margin-top: 2px; font: 600 9px 'DM Sans', sans-serif; letter-spacing: .26em; color: var(--muted); }
 .header-note { font-size: 12px; color: var(--muted); letter-spacing: .15em; }
-.catalog-header-actions { display: flex; gap: 25px; align-items: center; }.catalog-header-actions a { font-size: 12px; color: var(--accent-dark); font-weight: 700; }.catalog-header-actions a:hover { text-decoration: underline; }
+.catalog-header-actions { display: flex; gap: 25px; align-items: center; }.catalog-header-actions a, .catalog-header-actions button { font-size: 12px; color: var(--accent-dark); font-weight: 700; }.catalog-header-actions a:hover, .catalog-header-actions button:hover { text-decoration: underline; }.catalog-header-actions button { border: 0; background: none; padding: 8px 0; }
+.account-layer { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(15, 35, 43, .68); }
+.story-action-dialog .ant-modal-content, .creator-form-dialog .ant-modal-content, .account-dialog .ant-modal-content { background: var(--card); border: 1px solid var(--line); border-radius: 2px; box-shadow: var(--shadow); }
+.story-action-dialog .ant-modal-title, .creator-form-dialog .ant-modal-title, .account-dialog .ant-modal-title { background: transparent; color: var(--ink); font: 600 26px 'Songti SC', serif; }
+.story-action-dialog .ant-modal-confirm-content { color: var(--muted); line-height: 1.7; }
+.story-action-dialog .ant-btn-primary, .creator-form-dialog .ant-btn-primary, .account-dialog .ant-btn-primary { background: var(--deep); box-shadow: none; }
+.story-action-dialog .ant-btn-primary:hover, .creator-form-dialog .ant-btn-primary:hover, .account-dialog .ant-btn-primary:hover { background: var(--deep-2) !important; }
+.story-action-dialog .ant-input { margin-top: 12px; }
+.account-dialog .account-panel { width: 100%; padding: 12px 0 0; border: 0; box-shadow: none; }
+.account-panel { width: min(100%, 430px); display: grid; gap: 14px; padding: clamp(25px, 4vw, 40px); background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.account-panel h2 { margin: 0; font: 600 34px 'Songti SC', serif; }.account-panel p { margin: 0; color: var(--muted); font-size: 13px; }
+.account-panel label { display: grid; gap: 7px; font-size: 12px; font-weight: 700; }.account-panel input { min-height: 44px; padding: 9px 12px; border: 1px solid var(--line); background: white; color: var(--ink); }
+.account-panel > .button { width: 100%; margin-top: 8px; }.account-panel .account-error { color: #a43d36; }
+.account-mode, .account-cancel { border: 0; background: none; color: var(--accent-dark); text-align: center; font-size: 12px; padding: 6px; }
 .catalog-hero { position: relative; padding: 94px 0 92px; overflow: hidden; }
 .catalog-hero::after { content: 'STORIES'; position: absolute; right: -18px; bottom: -50px; font: 700 clamp(90px, 17vw, 230px) 'DM Sans', sans-serif; letter-spacing: -.09em; color: rgba(23, 48, 56, .035); pointer-events: none; }
 .catalog-hero h1 { font-family: 'Songti SC', 'Noto Serif CJK SC', serif; font-size: clamp(46px, 5.3vw, 78px); line-height: 1.26; letter-spacing: -.045em; margin: 20px 0 20px; font-weight: 600; }
@@ -64,7 +77,7 @@ p { line-height: 1.8; text-wrap: pretty; }
 .game-card-art::before, .menu-art::before { content: ''; position: absolute; width: 140%; height: 140%; border: 1px solid rgba(231, 217, 188, .18); border-radius: 50%; top: 22%; left: 18%; }
 .game-card-art::after, .menu-art::after { content: ''; position: absolute; width: 110%; height: 110%; border: 1px solid rgba(231, 217, 188, .12); border-radius: 50%; top: 37%; left: -40%; }
 .cover-index, .cover-bottom { position: absolute; z-index: 1; font-size: 10px; letter-spacing: .2em; }
-.cover-index { top: 24px; left: 25px; }
+.cover-index { top: 24px; left: 25px; padding: 7px 10px; background: rgba(251, 250, 245, .94); color: var(--ink); font-weight: 700; }
 .cover-bottom { bottom: 24px; left: 25px; line-height: 1.7; opacity: .65; }
 .cover-symbol { position: absolute; font-family: 'Songti SC', serif; font-size: clamp(100px, 12vw, 190px); font-weight: 300; line-height: 1; color: #ded4ba; top: 28%; left: 20%; opacity: .72; }
 .cover-symbol:has(.cover-image) { inset: 0; opacity: 1; }
@@ -73,7 +86,9 @@ p { line-height: 1.8; text-wrap: pretty; }
 .game-card-art:has(.cover-image)::before, .menu-art:has(.cover-image)::before { content: ''; position: absolute; z-index: 1; inset: 0; background: linear-gradient(180deg, rgba(10, 31, 38, .25), transparent 45%, rgba(10, 31, 38, .5)); pointer-events: none; }
 .game-card-info { padding: 31px 30px 24px; display: flex; flex-direction: column; }
 .card-topline { display: flex; justify-content: space-between; gap: 10px; font-size: 10px; color: var(--muted); letter-spacing: .05em; }
-.card-topline span:last-child { color: var(--accent); white-space: nowrap; }
+.card-topline > span:last-child { color: var(--accent); white-space: nowrap; }
+.card-story-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 12px; }
+.card-version { color: var(--ink); font-weight: 700; white-space: nowrap; }
 .game-card-info h2 { margin: 58px 0 10px; font-family: 'Songti SC', serif; font-size: 31px; font-weight: 600; }
 .game-card-info p { color: var(--muted); font-size: 13px; }
 .card-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 15px; display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; }
@@ -416,3 +431,13 @@ p { line-height: 1.8; text-wrap: pretty; }
 .stage-offer button:first-child { background: var(--deep); color: white; }
 .item-glyph img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .item-detail-image { display: block; width: min(100%, 320px); max-height: 280px; object-fit: contain; margin: 12px 0; background: #f3f1e9; }
+.usage-page { min-height: 100vh; padding: clamp(24px, 5vw, 80px); background: #f3f1e9; color: #192e35; }
+.usage-page h1 { font-size: clamp(34px, 4vw, 60px); margin: 22px 0 8px; }
+.usage-page h2 { margin-top: 34px; }
+.usage-filters { display: flex; flex-wrap: wrap; gap: 12px; margin: 30px 0; }
+.usage-filters label { display: grid; gap: 5px; font-size: 13px; }
+.usage-filters input, .usage-filters select { min-width: 130px; max-width: 220px; padding: 9px 12px; border: 1px solid #c9cbc3; background: white; }
+.usage-table-wrap { overflow-x: auto; }
+.usage-page table { width: 100%; min-width: 900px; border-collapse: collapse; background: #fffefa; font-size: 13px; }
+.usage-page th, .usage-page td { padding: 11px; border-bottom: 1px solid #e1e0d8; text-align: left; vertical-align: top; }
+.usage-page pre { overflow: auto; padding: 20px; background: #fffefa; }

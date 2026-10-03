@@ -1,8 +1,23 @@
 export interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
   cachedTokens?: number;
+  cacheWriteTokens?: number;
+}
+
+interface RawUsage { prompt_tokens?: number; completion_tokens?: number; input_tokens?: number; output_tokens?: number; total_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  cache_creation_input_tokens?: number; cache_read_input_tokens?: number }
+function tokenUsage(raw: RawUsage): TokenUsage {
+  return { ...(raw.prompt_tokens !== undefined || raw.input_tokens !== undefined ? { promptTokens: raw.prompt_tokens ?? raw.input_tokens } : {}),
+    ...(raw.completion_tokens !== undefined || raw.output_tokens !== undefined ? { completionTokens: raw.completion_tokens ?? raw.output_tokens } : {}),
+    ...(raw.total_tokens !== undefined ? { totalTokens: raw.total_tokens } : {}),
+    ...(raw.cache_read_input_tokens !== undefined || raw.prompt_tokens_details?.cached_tokens !== undefined || raw.input_tokens_details?.cached_tokens !== undefined
+      ? { cachedTokens: raw.cache_read_input_tokens ?? raw.prompt_tokens_details?.cached_tokens ?? raw.input_tokens_details?.cached_tokens } : {}),
+    ...(raw.cache_creation_input_tokens !== undefined || raw.prompt_tokens_details?.cache_write_tokens !== undefined || raw.input_tokens_details?.cache_write_tokens !== undefined
+      ? { cacheWriteTokens: raw.cache_creation_input_tokens ?? raw.prompt_tokens_details?.cache_write_tokens ?? raw.input_tokens_details?.cache_write_tokens } : {}) };
 }
 
 function topLevelMessageStart(raw: string): number | null {
@@ -104,14 +119,12 @@ export async function readChatCompletionStream(response: Response, onContent: (d
   if (!response.headers.get('content-type')?.includes('text/event-stream')) {
     const data = await response.json() as {
       choices?: { message?: { content?: string }; finish_reason?: string | null }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
+      usage?: RawUsage;
     };
     const content = data.choices?.[0]?.message?.content ?? '';
     if (content) onContent(content);
     return { content, finishReason: data.choices?.[0]?.finish_reason ?? null,
-      usage: data.usage ? { promptTokens: data.usage.prompt_tokens ?? 0, completionTokens: data.usage.completion_tokens ?? 0,
-        totalTokens: data.usage.total_tokens ?? 0,
-        ...(data.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedTokens: data.usage.prompt_tokens_details.cached_tokens } : {}) } : null };
+      usage: data.usage ? tokenUsage(data.usage) : null };
   }
   if (!response.body) throw new Error('AI 流式响应缺少内容');
   const reader = response.body.getReader();
@@ -125,7 +138,7 @@ export async function readChatCompletionStream(response: Response, onContent: (d
     if (!data || data === '[DONE]') return;
     const parsed = JSON.parse(data) as {
       choices?: { delta?: { content?: string }; finish_reason?: string | null }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
+      usage?: RawUsage;
       error?: { message?: string };
     };
     if (parsed.error) throw new Error(parsed.error.message ?? 'AI 流式响应错误');
@@ -134,9 +147,7 @@ export async function readChatCompletionStream(response: Response, onContent: (d
       if (delta) { content += delta; onContent(delta); }
       if (choice.finish_reason) finishReason = choice.finish_reason;
     }
-    if (parsed.usage) usage = { promptTokens: parsed.usage.prompt_tokens ?? 0,
-      completionTokens: parsed.usage.completion_tokens ?? 0, totalTokens: parsed.usage.total_tokens ?? 0,
-      ...(parsed.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedTokens: parsed.usage.prompt_tokens_details.cached_tokens } : {}) };
+    if (parsed.usage) usage = tokenUsage(parsed.usage);
   };
   try {
     for (;;) {

@@ -10,7 +10,7 @@ interface Props { content: string; onChange: (value: string) => void; kind: '结
 export default function GalleryEditor({ content, onChange, kind, sources, onJson }: Props) {
   const entries = JSON.parse(content) as GalleryDraft[];
   const patch = (id: string, fields: Record<string, unknown>) => onChange(patchEntryById(content, id, fields));
-  return <TabbedEntriesEditor entries={entries} kind={kind} onAdd={() => {
+  return <TabbedEntriesEditor entries={entries} kind={kind} layout="side" onAdd={() => {
     const entry = { id: newEntryId(), name: `新${kind}`, description: '', hidden: false };
     onChange(addEntry(content, entry)); return entry;
   }} onRemove={id => onChange(removeEntry(content, id))} render={entry => <>

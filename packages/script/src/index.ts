@@ -2,9 +2,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Condition, Effect, GameScript } from '@game/contracts';
+import { validCalendarDate, type Condition, type Effect, type GameScript, type IndicatorDefinition, type ValueComparison } from '@game/contracts';
+import { loreType } from './lore.js';
 
-const contentRoot = fileURLToPath(new URL('../../../content', import.meta.url));
+// Legacy story data lives only as a test fixture. Production catalogs use published MySQL projects.
+const contentRoot = fileURLToPath(new URL('../../../tests/fixtures', import.meta.url));
 const safeId = /^[a-z0-9][a-z0-9-]*$/;
 
 function readPart(gameId: string, file: string, root = contentRoot): unknown {
@@ -44,6 +46,7 @@ export function loadScript(gameId: string, root = contentRoot): GameScript {
     ...(readPart(gameId, 'manifest.json', root) as object),
     playerFields: readPart(gameId, 'player-form.json', root),
     playerIndicators: readOptionalArrayPart(gameId, 'player/indicators.json', root),
+    storyIndicators: readOptionalArrayPart(gameId, 'story/indicators.json', root),
     playerRules: readOptionalArrayPart(gameId, 'player/rules.json', root),
     stats: readOptionalArrayPart(gameId, 'stats.json', root),
     items: readPart(gameId, 'items.json', root),
@@ -128,8 +131,28 @@ export function normalizeScriptReferences(script: GameScript): void {
   for (const step of script.guide?.steps ?? []) { condition(step.completeWhen); step.target.locationId = location(step.target.locationId); if (step.target.npcId) step.target.npcId = npc(step.target.npcId); }
 }
 
+function obsoleteItemTagIssues(script: GameScript): ScriptIssue[] {
+  const issues: ScriptIssue[] = [];
+  const add = (path: string) => issues.push({ path, message: `${path} 使用了已移除的道具标签；请改用剧情事件条件与记录效果` });
+  const visit = (value: unknown, path: string): void => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) { value.forEach((entry, index) => visit(entry, `${path}[${index}]`)); return; }
+    const entry = value as Record<string, unknown>;
+    if (entry.type === 'addItemTag' || entry.type === 'removeItemTag') add(path);
+    if (entry.hasItem && typeof entry.hasItem === 'object' && Object.hasOwn(entry.hasItem, 'tags')) add(`${path}.hasItem.tags`);
+    if (/^\$\.items\[\d+\]$/.test(path)) {
+      if (Object.hasOwn(entry, 'initialTags')) add(`${path}.initialTags`);
+      if (Object.hasOwn(entry, 'hiddenTags')) add(`${path}.hiddenTags`);
+    }
+    for (const [key, child] of Object.entries(entry)) visit(child, `${path}.${key}`);
+  };
+  visit(script, '$');
+  return issues;
+}
+
 export function validateScript(script: GameScript): string[] {
   const errors: string[] = [];
+  errors.push(...obsoleteItemTagIssues(script).map(issue => issue.message));
   const storyEvents = Array.isArray(script.storyEvents) ? script.storyEvents : [];
   if (!Array.isArray(script.storyEvents)) errors.push('剧情事件应为数组');
   if (!script.id || !safeId.test(script.id)) errors.push('剧本 ID 不合法');
@@ -142,6 +165,28 @@ export function validateScript(script: GameScript): string[] {
   const unique = (label: string, ids: string[]) => {
     if (new Set(ids).size !== ids.length) errors.push(`${label}存在重复 ID`);
   };
+  const checkComparison = (check: ValueComparison, kind: IndicatorDefinition['type'] | 'input' | 'textarea' | 'select' | 'radio' | 'checkbox', label: string): void => {
+    const allowed = kind === 'number' ? ['eq', 'ne', 'gt', 'gte', 'lt', 'lte'] :
+      kind === 'date' ? ['eq', 'ne', 'gt', 'gte', 'lt', 'lte'] :
+      kind === 'text' || kind === 'input' || kind === 'textarea' ? ['eq', 'ne', 'contains', 'notContains'] :
+      kind === 'tags' || kind === 'checkbox' ? ['has', 'lacks', 'length'] : ['eq', 'ne'];
+    const entries = Object.entries(check).filter(([key]) => !['id', 'npcId'].includes(key));
+    if (!entries.length) { errors.push(`${label}缺少比较条件`); return; }
+    for (const [key, value] of entries) {
+      if (!allowed.includes(key)) {
+        errors.push(['gt', 'gte', 'lt', 'lte'].includes(key) && kind !== 'date' ? `${label} 不是数字` : `${label}比较 ${key} 不适用于${kind}`);
+        continue;
+      }
+      if (key === 'length') {
+        if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.keys(value).length ||
+          Object.entries(value).some(([operator, count]) => !['eq', 'gt', 'gte', 'lt', 'lte'].includes(operator) || !Number.isInteger(count) || (count as number) < 0))
+          errors.push(`${label}数组长度比较值无效`);
+      } else if (kind === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) errors.push(`${label}数字比较值无效`);
+      else if (kind === 'boolean' && typeof value !== 'boolean') errors.push(`${label}是非比较值无效`);
+      else if (kind === 'date' && !validCalendarDate(value)) errors.push(`${label}日期比较值无效`);
+      else if (!['number', 'boolean', 'date'].includes(kind) && (typeof value !== 'string' || !value.trim())) errors.push(`${label}文字比较值无效`);
+    }
+  };
   unique('道具', script.items.map((item) => item.id));
   for (const item of script.items) if (item.image !== undefined &&
     (typeof item.image !== 'string' || !/^\/api\/item-images\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.image)))
@@ -152,6 +197,8 @@ export function validateScript(script: GameScript): string[] {
   unique('事件', script.events.map((event) => event.id));
   unique('剧情事件', storyEvents.map((event) => event?.id));
   const storyEventIds = new Set(storyEvents.map((event) => event?.id));
+  const newFormat = !!script.storyIndicators?.some((entry) => entry.systemRole === 'onceRules');
+  if (newFormat) unique('规则', [...script.events.map((entry) => entry.id), ...(script.playerRules ?? []).map((entry) => entry.id)]);
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   for (const [index, event] of storyEvents.entries()) {
     if (!event || typeof event !== 'object') { errors.push(`剧情事件 ${index + 1} 应为对象`); continue; }
@@ -179,21 +226,23 @@ export function validateScript(script: GameScript): string[] {
       const definition = script.npcs.find((entry) => entry.id === target)?.indicators?.find((entry) => entry.id === condition.indicator.id);
       if (!target || !npcIds.has(target)) errors.push(`${label}引用未知 NPC ${target ?? '未指定'}`);
       else if (!definition) errors.push(`${label}引用未知指标 ${target}:${condition.indicator.id}`);
-      else if ((condition.indicator.gte !== undefined || condition.indicator.lte !== undefined) && definition.type !== 'number') errors.push(`${label}指标 ${definition.id} 不是数字`);
-      else if ((condition.indicator.has !== undefined || condition.indicator.lacks !== undefined) && definition.type !== 'tags') errors.push(`${label}指标 ${definition.id} 不是标签集合`);
-      else if (definition.type !== 'tags' && [condition.indicator.eq, condition.indicator.ne].some((value) => value !== undefined && typeof value !== (definition.type === 'number' ? 'number' : definition.type === 'boolean' ? 'boolean' : 'string'))) errors.push(`${label}指标 ${definition.id} 比较值类型不匹配`);
+      else checkComparison(condition.indicator, definition.type, `${label}指标 ${definition.id}`);
     }
     if ('playerIndicator' in condition) {
       const definition = script.playerIndicators?.find((entry) => entry.id === condition.playerIndicator.id);
-      const { gte, lte, eq, ne, has, lacks } = condition.playerIndicator;
       if (!definition) errors.push(`${label}引用未知玩家指标 ${condition.playerIndicator.id}`);
-      else if ((gte !== undefined || lte !== undefined) && definition.type !== 'number') errors.push(`${label}玩家指标 ${definition.id} 不是数字`);
-      else if ((has !== undefined || lacks !== undefined) && definition.type !== 'tags') errors.push(`${label}玩家指标 ${definition.id} 不是标签集合`);
-      else if (definition.type !== 'tags' && [eq, ne].some((value) => value !== undefined && typeof value !== (definition.type === 'number' ? 'number' : definition.type === 'boolean' ? 'boolean' : 'string')))
-        errors.push(`${label}玩家指标 ${definition.id} 比较值类型不匹配`);
+      else checkComparison(condition.playerIndicator, definition.type, `${label}玩家指标 ${definition.id}`);
     }
-    if ('playerField' in condition && !script.playerFields.some((entry) => entry.id === condition.playerField.id))
-      errors.push(`${label}引用未知玩家资料 ${condition.playerField.id}`);
+    if ('storyIndicator' in condition) {
+      const definition = script.storyIndicators?.find((entry) => entry.id === condition.storyIndicator.id);
+      if (!definition) errors.push(`${label}引用未知剧本指标 ${condition.storyIndicator.id}`);
+      else checkComparison(condition.storyIndicator, definition.type, `${label}剧本指标 ${definition.id}`);
+    }
+    if ('playerField' in condition) {
+      const definition = script.playerFields.find((entry) => entry.id === condition.playerField.id);
+      if (!definition) errors.push(`${label}引用未知玩家资料 ${condition.playerField.id}`);
+      else checkComparison(condition.playerField, definition.type, `${label}玩家资料 ${definition.id}`);
+    }
     if ('npcLocation' in condition && (!npcIds.has(condition.npcLocation.npcId) || !locationIds.has(condition.npcLocation.locationId)))
       errors.push(`${label}引用未知 NPC 地点 ${condition.npcLocation.npcId}:${condition.npcLocation.locationId}`);
     if ('hasItem' in condition && !itemIds.has(condition.hasItem.item)) errors.push(`${label}引用未知道具 ${condition.hasItem.item}`);
@@ -204,7 +253,8 @@ export function validateScript(script: GameScript): string[] {
     }
     if ('npcTag' in condition && !npcIds.has(condition.npcTag.npc)) errors.push(`${label}引用未知 NPC ${condition.npcTag.npc}`);
     if ('unlockedLocation' in condition && !locationIds.has(condition.unlockedLocation)) errors.push(`${label}引用未知地点 ${condition.unlockedLocation}`);
-    if ('completedEvent' in condition && !script.events.some((entry) => entry.id === condition.completedEvent)) errors.push(`${label}引用未知事件 ${condition.completedEvent}`);
+    if ('completedEvent' in condition && script.storyIndicators?.some((entry) => entry.systemRole === 'onceRules')) errors.push(`${label}已废弃 completedEvent，请改用剧情事件`);
+    else if ('completedEvent' in condition && !script.events.some((entry) => entry.id === condition.completedEvent)) errors.push(`${label}引用未知事件 ${condition.completedEvent}`);
     if ('storyEvent' in condition && !storyEventIds.has(condition.storyEvent)) errors.push(`${label}引用未知剧情事件 ${condition.storyEvent}`);
     if ('location' in condition && !locationIds.has(condition.location)) errors.push(`${label}引用未知地点 ${condition.location}`);
     if ('discoveredNpc' in condition && !npcIds.has(condition.discoveredNpc)) errors.push(`${label}引用未知 NPC ${condition.discoveredNpc}`);
@@ -218,16 +268,20 @@ export function validateScript(script: GameScript): string[] {
       const explicit = 'target' in effect ? effect.target : undefined;
       const target = explicit ?? ('npcId' in effect && effect.npcId ? `npc:${effect.npcId}` : ownerNpcId ? `npc:${ownerNpcId}` : ownerPlayer ? 'player' : undefined);
       if (!target) errors.push(`${label}缺少指标修改目标`);
-      else if (target !== 'player' && !npcIds.has(target.slice(4))) {
-        // Unknown explicit NPC targets are author warnings; runtime skips only that effect.
+      else if (target !== 'player' && target !== 'story' && !npcIds.has(target.slice(4))) {
+        if (newFormat) errors.push(`${label}引用未知 NPC ${target}`);
       } else if ('id' in effect) {
         const definition = target === 'player' ? script.playerIndicators?.find((entry) => entry.id === effect.id) :
+          target === 'story' ? script.storyIndicators?.find((entry) => entry.id === effect.id) :
           script.npcs.find((entry) => entry.id === target.slice(4))?.indicators?.find((entry) => entry.id === effect.id);
         if (!definition) errors.push(`${label}引用未知指标 ${target}:${effect.id}`);
+        else if (definition.systemRole) errors.push(`${label}系统指标 ${effect.id} 不可修改`);
         else {
         const wrong = (effect.type === 'changeIndicator' && definition?.type !== 'number') ||
           ((effect.type === 'addIndicatorTag' || effect.type === 'removeIndicatorTag') && definition?.type !== 'tags') ||
           (effect.type === 'setIndicator' && definition && (definition.type === 'tags' ? !Array.isArray(effect.value) :
+            definition.type === 'date' ? !validCalendarDate(effect.value) :
+            definition.type === 'enum' ? !definition.options.includes(effect.value as string) :
             typeof effect.value !== (definition.type === 'number' ? 'number' : definition.type === 'boolean' ? 'boolean' : 'string')));
         if (wrong) errors.push(`${label}效果 ${effect.id} 类型不匹配`);
         }
@@ -244,10 +298,13 @@ export function validateScript(script: GameScript): string[] {
     if (effect.type === 'changeStat' && !statIds.has(`${effect.scope}:${effect.id}`)) errors.push(`${label}引用未知数值 ${effect.id}`);
     if (effect.type === 'changeStat' && effect.scope === 'npc' && !npcIds.has(effect.npc ?? '')) errors.push(`${label}引用未知 NPC ${effect.npc}`);
     if ('to' in effect && typeof effect.to === 'string' && effect.to.startsWith('npc:') && !npcIds.has(effect.to.slice(4))) errors.push(`${label}引用未知持有者 ${effect.to}`);
+    if ('to' in effect && typeof effect.to === 'string' && effect.to.startsWith('location:') && !locationIds.has(effect.to.slice(9))) errors.push(`${label}引用未知持有地点 ${effect.to}`);
     if ('from' in effect && typeof effect.from === 'string' && effect.from.startsWith('npc:') && !npcIds.has(effect.from.slice(4))) errors.push(`${label}引用未知持有者 ${effect.from}`);
+    if ('from' in effect && typeof effect.from === 'string' && effect.from.startsWith('location:') && !locationIds.has(effect.from.slice(9))) errors.push(`${label}引用未知持有地点 ${effect.from}`);
     if (effect.type === 'unlockLocation' && !locationIds.has(effect.location)) errors.push(`${label}引用未知地点 ${effect.location}`);
     if (effect.type === 'recordGallery' && !(effect.kind === 'ending' ? script.endings : script.achievements).some((entry) => entry.id === effect.id)) errors.push(`${label}引用未知图鉴 ${effect.id}`);
     if (effect.type === 'recordStoryEvent' && !storyEventIds.has(effect.eventId)) errors.push(`${label}引用未知剧情事件 ${effect.eventId}`);
+    if (effect.type === 'removeStoryEvent' && !storyEventIds.has(effect.eventId)) errors.push(`${label}引用未知剧情事件 ${effect.eventId}`);
   };
   for (const npc of script.npcs) {
     if (!locationIds.has(npc.initialLocationId)) errors.push(`NPC ${npc.id} 初始地点不存在 ${npc.initialLocationId}`);
@@ -255,6 +312,7 @@ export function validateScript(script: GameScript): string[] {
     for (const indicator of npc.indicators ?? []) {
       if (indicator.type === 'number' && (!Number.isFinite(indicator.initial) || indicator.min > indicator.max || indicator.initial < indicator.min || indicator.initial > indicator.max)) errors.push(`NPC ${npc.id} 指标 ${indicator.id} 数值范围无效`);
       if (indicator.type === 'enum' && (!indicator.options.length || !indicator.options.includes(indicator.initial))) errors.push(`NPC ${npc.id} 指标 ${indicator.id} 选项无效`);
+      if (indicator.type === 'date' && !validCalendarDate(indicator.initial)) errors.push(`NPC ${npc.id} 指标 ${indicator.id} 日期无效`);
     }
     unique(`NPC ${npc.id} 人格`, (npc.personas ?? []).map((entry) => entry.id));
     for (const persona of npc.personas ?? []) {
@@ -262,7 +320,14 @@ export function validateScript(script: GameScript): string[] {
       checkCondition(persona.when, `NPC ${npc.id} 人格 ${persona.id}`, npc.id);
     }
     for (const id of npc.initialItems) if (!itemIds.has(id)) errors.push(`NPC ${npc.id} 引用未知道具 ${id}`);
-    for (const lore of npc.lore ?? []) checkCondition(lore.when, `NPC ${npc.id} 背景资料`, npc.id);
+    for (const lore of npc.lore ?? []) {
+      checkCondition(lore.when, `NPC ${npc.id} 背景资料`, npc.id);
+      if (lore.type && lore.type !== 'always' && lore.type !== 'triggered') errors.push(`NPC ${npc.id} 世界书 ${lore.id} 类型无效`);
+      if (!Array.isArray(lore.keywords) || lore.keywords.some(keyword => typeof keyword !== 'string'))
+        errors.push(`NPC ${npc.id} 世界书 ${lore.id} 触发词格式无效`);
+      else if (loreType(lore) === 'triggered' && !lore.keywords.some(keyword => keyword.trim()))
+        errors.push(`NPC ${npc.id} 世界书 ${lore.id} 触发类型需要至少一个触发词`);
+    }
     checkCondition(npc.visibleWhen, `NPC ${npc.id}`, npc.id);
     for (const [item, condition] of Object.entries(npc.itemVisibility ?? {})) {
       if (!itemIds.has(item)) errors.push(`NPC ${npc.id} 引用未知道具 ${item}`);
@@ -287,11 +352,30 @@ export function validateScript(script: GameScript): string[] {
     }
   }
   unique('玩家指标', (script.playerIndicators ?? []).map((entry) => entry.id));
+  unique('开局资料', script.playerFields.map((entry) => entry.id));
+  for (const field of script.playerFields) {
+    if (typeof field.id !== 'string' || !field.id || typeof field.label !== 'string' || !field.label.trim()) errors.push(`开局资料 ${field.id} 标题或 ID 无效`);
+    if (field.editable === false && (field.default === undefined || field.default === '' ||
+      (Array.isArray(field.default) && field.default.length === 0))) errors.push(`开局资料 ${field.id} 不可编辑时必须提供默认值`);
+    const choices = field.options?.map((option) => option.value) ?? [];
+    if (['select', 'radio', 'checkbox'].includes(field.type) && (!choices.length || choices.some((value) => typeof value !== 'string' || !value) || new Set(choices).size !== choices.length)) errors.push(`开局资料 ${field.id} 选项无效`);
+    if (field.type === 'date' && field.default !== undefined && field.default !== '' && !validCalendarDate(field.default)) errors.push(`开局资料 ${field.id} 日期无效`);
+    if (field.type === 'checkbox' && field.default !== undefined && (!Array.isArray(field.default) || field.default.some((value) => !choices.includes(value)))) errors.push(`开局资料 ${field.id} 默认值无效`);
+    if (['select', 'radio'].includes(field.type) && field.default !== undefined && !choices.includes(field.default as string)) errors.push(`开局资料 ${field.id} 默认值无效`);
+    if (['input', 'textarea', 'date'].includes(field.type) && field.default !== undefined && typeof field.default !== 'string') errors.push(`开局资料 ${field.id} 默认值无效`);
+  }
   for (const indicator of script.playerIndicators ?? []) {
     if (indicator.type === 'number' && (!Number.isFinite(indicator.initial) || indicator.min > indicator.max || indicator.initial < indicator.min || indicator.initial > indicator.max))
       errors.push(`玩家指标 ${indicator.id} 数值范围无效`);
     if (indicator.type === 'enum' && (!indicator.options.length || !indicator.options.includes(indicator.initial)))
       errors.push(`玩家指标 ${indicator.id} 选项无效`);
+    if (indicator.type === 'date' && !validCalendarDate(indicator.initial)) errors.push(`玩家指标 ${indicator.id} 日期无效`);
+  }
+  unique('剧本指标', (script.storyIndicators ?? []).map((entry) => entry.id));
+  for (const indicator of script.storyIndicators ?? []) {
+    if (indicator.type === 'number' && (!Number.isFinite(indicator.initial) || indicator.min > indicator.max || indicator.initial < indicator.min || indicator.initial > indicator.max)) errors.push(`剧本指标 ${indicator.id} 数值范围无效`);
+    if (indicator.type === 'enum' && (!indicator.options.length || !indicator.options.includes(indicator.initial))) errors.push(`剧本指标 ${indicator.id} 选项无效`);
+    if (indicator.type === 'date' && !validCalendarDate(indicator.initial)) errors.push(`剧本指标 ${indicator.id} 日期无效`);
   }
   unique('玩家规则', (script.playerRules ?? []).map((entry) => entry.id));
   for (const rule of script.playerRules ?? []) {
@@ -328,6 +412,7 @@ export interface ScriptIssue { path: string; message: string }
 export function inspectScript(script: GameScript): { errors: ScriptIssue[]; warnings: ScriptIssue[] } {
   const errors: ScriptIssue[] = [];
   const warnings: ScriptIssue[] = [];
+  errors.push(...obsoleteItemTagIssues(script));
   const items = new Map<string, number>();
   script.items.forEach((item, index) => {
     if (items.has(item.name)) errors.push({ path: `$.items[${index}].name`, message: `道具名称“${item.name}”重复` });
@@ -336,9 +421,6 @@ export function inspectScript(script: GameScript): { errors: ScriptIssue[]; warn
       if ('any' in variant.when && !variant.when.any.length) errors.push({ path: `$.items[${index}].variants[${variantIndex}].when.any`, message: 'any 条件不能为空' });
     });
   });
-  script.locations.forEach((location, index) => location.items?.forEach((placement, placementIndex) => {
-    if (!placement.takeWhen) warnings.push({ path: `$.locations[${index}].items[${placementIndex}].takeWhen`, message: '未设置获取条件，发现后仍不可拿取' });
-  }));
   const warnTarget = (effect: Effect, at: string) => {
     if ('target' in effect && effect.target?.startsWith('npc:') && !script.npcs.some((npc) => npc.id === effect.target?.slice(4)))
       warnings.push({ path: `${at}.target`, message: `目标 NPC ${effect.target.slice(4)} 不存在，运行时将跳过此效果` });

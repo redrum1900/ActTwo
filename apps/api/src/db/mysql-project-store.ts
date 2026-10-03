@@ -1,9 +1,10 @@
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import type { GameScript } from '@game/contracts';
 import { inspectScriptParts, blankScriptParts, migrateLegacyStatsParts, scriptPartsFromScript, type ScriptParts } from '@game/script/parts';
-import { listScripts, type ScriptIssue } from '@game/script';
+import { type ScriptIssue } from '@game/script';
 import { ProjectError } from '../creator/project-store.js';
 import { withTransaction } from './mysql.js';
+import { createMysqlPublishedVersions } from './mysql-published-versions.js';
 
 const safeId = /^[a-z0-9][a-z0-9-]*$/;
 const safeSection = /^(?:manifest|player-form|items|locations|endings|achievements|stats)\.json$|^story\/indicators\.json$|^player\/(?:indicators|rules)\.json$|^npcs\/[a-z0-9][a-z0-9-]*\/(?:base|indicators|personas|rules|lore)\.json$/;
@@ -23,6 +24,7 @@ export interface MysqlCreatorProject {
 }
 
 export function createMysqlProjectStore(pool: Pool) {
+  const publications = createMysqlPublishedVersions(pool);
   let itemImageValidator: ((projectId: string, script: GameScript) => Promise<ScriptIssue[]> | ScriptIssue[]) | null = null;
   const owned = async (client: Client, owner: string, id: string): Promise<ProjectRow | null> => {
     const [rows] = await client.execute<ProjectRow[]>(
@@ -46,9 +48,9 @@ export function createMysqlProjectStore(pool: Pool) {
   });
   const parts = async (client: Client, id: string): Promise<ScriptParts> =>
     Object.fromEntries(Object.entries(await sections(client, id)).map(([path, entry]) => [path, entry.content]));
-  const inspected = async (owner: string, id: string) => {
-    await requireOwned(pool, owner, id);
-    const report = inspectScriptParts(await parts(pool, id));
+  const inspected = async (owner: string, id: string, client: Client = pool) => {
+    await requireOwned(client, owner, id);
+    const report = inspectScriptParts(await parts(client, id));
     if (report.script && report.script.id !== id) report.errors.push({ path: 'manifest.json', message: '剧本 ID 不能更改' });
     if (report.script && itemImageValidator) report.errors.push(...await itemImageValidator(id, report.script));
     return report;
@@ -58,11 +60,18 @@ export function createMysqlProjectStore(pool: Pool) {
     setItemImageValidator(validator: (projectId: string, script: GameScript) => Promise<ScriptIssue[]> | ScriptIssue[]) {
       itemImageValidator = validator;
     },
-    async list(owner: string): Promise<Omit<MysqlCreatorProject, 'sections'>[]> {
-      const [rows] = await pool.execute<ProjectRow[]>(
-        'SELECT * FROM creator_projects WHERE owner_id=? AND deleted_at IS NULL ORDER BY updated_at DESC', [owner]);
-      return rows.map(row => ({ id: row.id, title: row.title, createdAt: row.created_at,
-        updatedAt: row.updated_at, publishedAt: row.published_at }));
+    async list(owner: string): Promise<(Omit<MysqlCreatorProject, 'sections'> & { subtitle: string })[]> {
+      const [rows] = await pool.execute<(ProjectRow & { manifest_content: string | null })[]>(
+        `SELECT p.*, s.content AS manifest_content FROM creator_projects p
+         LEFT JOIN creator_sections s ON s.project_id=p.id AND s.path='manifest.json'
+         WHERE p.owner_id=? AND p.deleted_at IS NULL ORDER BY p.updated_at DESC`, [owner]);
+      return rows.map(row => {
+        let subtitle = '';
+        try { const value = JSON.parse(row.manifest_content ?? '{}').subtitle; if (typeof value === 'string') subtitle = value; }
+        catch { /* Invalid JSON remains an editable draft. */ }
+        return { id: row.id, title: row.title, subtitle, createdAt: row.created_at,
+          updatedAt: row.updated_at, publishedAt: row.published_at };
+      });
     },
     async get(owner: string, id: string): Promise<MysqlCreatorProject | null> {
       const row = await owned(pool, owner, id);
@@ -73,7 +82,7 @@ export function createMysqlProjectStore(pool: Pool) {
       if (!title.trim() || title.length > 100) throw new ProjectError('故事名称须为 1–100 字');
       await withTransaction(pool, async connection => {
         const [existing] = await connection.execute<RowDataPacket[]>('SELECT id FROM creator_projects WHERE id=?', [id]);
-        if (existing.length || listScripts().some(script => script.id === id)) throw new ProjectError('故事 ID 已存在', 409);
+        if (existing.length) throw new ProjectError('故事 ID 已存在', 409);
         const timestamp = now();
         await connection.execute('INSERT INTO creator_projects (id,owner_id,title,created_at,updated_at) VALUES (?,?,?,?,?)',
           [id, owner, title.trim(), timestamp, timestamp]);
@@ -164,8 +173,8 @@ export function createMysqlProjectStore(pool: Pool) {
       const report = await inspected(owner, id);
       return { errors: report.errors, warnings: report.warnings };
     },
-    async validatedDraft(owner: string, id: string): Promise<GameScript> {
-      const report = await inspected(owner, id);
+    async validatedDraft(owner: string, id: string, client: Client = pool): Promise<GameScript> {
+      const report = await inspected(owner, id, client);
       if (report.errors.length || !report.script)
         throw new ProjectError(`剧本校验失败：${report.errors.map(issue => `${issue.path} ${issue.message}`).join('；')}`);
       return report.script;
@@ -175,18 +184,17 @@ export function createMysqlProjectStore(pool: Pool) {
       await pool.execute('UPDATE creator_projects SET deleted_at=?,updated_at=? WHERE id=?', [now(), now(), id]);
     },
     async getPublished(id: string): Promise<GameScript | null> {
-      const [rows] = await pool.execute<ScriptRow[]>(`SELECT s.script_json FROM published_scripts s
-        JOIN creator_projects p ON p.id=s.project_id WHERE s.project_id=? AND p.deleted_at IS NULL`, [id]);
-      return rows[0] ? JSON.parse(rows[0].script_json) as GameScript : null;
+      return publications.getLatest(id);
+    },
+    async getPublishedExact(id: string, version: string, hash: string): Promise<GameScript | null> {
+      return publications.getExact(id, version, hash);
     },
     async getArchivedPublished(id: string): Promise<GameScript | null> {
       const [rows] = await pool.execute<ScriptRow[]>('SELECT script_json FROM published_scripts WHERE project_id=?', [id]);
       return rows[0] ? JSON.parse(rows[0].script_json) as GameScript : null;
     },
     async listPublished(): Promise<GameScript[]> {
-      const [rows] = await pool.query<ScriptRow[]>(`SELECT s.script_json FROM published_scripts s
-        JOIN creator_projects p ON p.id=s.project_id WHERE p.deleted_at IS NULL ORDER BY s.published_at DESC`);
-      return rows.map(row => JSON.parse(row.script_json) as GameScript);
+      return publications.listLatest();
     },
   };
   return store;

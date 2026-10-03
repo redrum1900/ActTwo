@@ -1,4 +1,4 @@
-import type { Condition } from '@game/contracts';
+import { validCalendarDate, type Condition, type ValueComparison } from '@game/contracts';
 
 export type ConditionPath = readonly (number | 'not')[];
 export type ConditionAction =
@@ -10,13 +10,29 @@ export type ConditionAction =
 export interface ConditionSources {
   storyEvents: { id: string; label: string }[];
   items: { id: string; name: string }[];
-  npcs: { id: string; name: string; indicators?: { id: string; name: string; type: string; options?: string[] }[] }[];
-  locations: { id: string; name: string }[];
+  npcs: { id: string; name: string; initialItems?: string[]; indicators?: { id: string; name: string; type: string; options?: string[] }[] }[];
+  locations: { id: string; name: string; items?: string[] }[];
   playerIndicators: { id: string; name: string; type: string; options?: string[] }[];
+  storyIndicators?: { id: string; name: string; type: string; options?: string[]; systemRole?: string }[];
   periods: string[];
-  playerFields: { id: string; label: string }[];
+  playerFields: { id: string; label: string; type?: string; options?: { value: string; label: string }[] }[];
   rules: { id: string; label: string }[];
   ownerNpcId?: string;
+}
+
+export function comparisonOperators(type: string): string[] {
+  if (type === 'number' || type === 'date') return ['eq', 'ne', 'gt', 'gte', 'lt', 'lte'];
+  if (type === 'text' || type === 'input' || type === 'textarea') return ['eq', 'ne', 'contains', 'notContains'];
+  if (type === 'tags' || type === 'checkbox') return ['has', 'lacks', 'length'];
+  return ['eq', 'ne'];
+}
+
+export function defaultComparison(type: string, options?: readonly string[]): ValueComparison {
+  if (type === 'tags' || type === 'checkbox') return { has: options?.[0] ?? '' };
+  if (type === 'number') return { eq: 0 };
+  if (type === 'boolean') return { eq: false };
+  if (type === 'date') return { eq: '' };
+  return { eq: type === 'enum' || type === 'select' || type === 'radio' ? options?.[0] ?? '' : '' };
 }
 
 export function changeConditionKind(group: Condition, kind: 'all' | 'any'): Condition {
@@ -60,13 +76,20 @@ export function patchCondition(root: Condition, path: ConditionPath, action: Con
 
 export function conditionIssues(root: Condition, sources: ConditionSources): string[] {
   const issues: string[] = [];
-  const compareIssue = (value: { gte?: number; lte?: number; eq?: unknown; ne?: unknown; has?: string; lacks?: string }, type: string, label: string) => {
-    if (type === 'boolean' && (value.gte !== undefined || value.lte !== undefined ||
-      [value.eq, value.ne].some(entry => entry !== undefined && typeof entry !== 'boolean'))) issues.push(`${label}是布尔指标，只能比较是/否`);
-    if (type === 'number' && (value.has !== undefined || value.lacks !== undefined ||
-      [value.eq, value.ne].some(entry => entry !== undefined && typeof entry !== 'number'))) issues.push(`${label}是数值指标，比较值应为数字`);
-    if (type === 'tags' && (value.gte !== undefined || value.lte !== undefined || value.eq !== undefined || value.ne !== undefined)) issues.push(`${label}是标签指标，只能判断包含/不含`);
-    if (type === 'enum' && (value.gte !== undefined || value.lte !== undefined || value.has !== undefined || value.lacks !== undefined)) issues.push(`${label}是枚举指标，只能判断等于/不等于`);
+  const compareIssue = (value: ValueComparison, type: string, label: string) => {
+    const allowed = comparisonOperators(type);
+    const entries = Object.entries(value).filter(([key]) => !['id', 'npcId'].includes(key));
+    if (!entries.length) issues.push(`${label}缺少比较方式`);
+    for (const [key, operand] of entries) {
+      if (!allowed.includes(key)) { issues.push(`${label}${type === 'boolean' ? '是布尔指标，' : ''}比较 ${key} 不适用于${type}`); continue; }
+      if (key === 'length') {
+        if (!operand || typeof operand !== 'object' || Array.isArray(operand) || !Object.keys(operand).length ||
+          Object.entries(operand).some(([operator, count]) => !['eq', 'gt', 'gte', 'lt', 'lte'].includes(operator) || !Number.isInteger(count) || (count as number) < 0)) issues.push(`${label}数组长度无效`);
+      } else if (type === 'number' && (typeof operand !== 'number' || !Number.isFinite(operand))) issues.push(`${label}数字比较值无效`);
+      else if (type === 'boolean' && typeof operand !== 'boolean') issues.push(`${label}是布尔指标，比较值只能是/否`);
+      else if (type === 'date' && !validCalendarDate(operand)) issues.push(`${label}日期比较值无效`);
+      else if (!['number', 'boolean', 'date'].includes(type) && (typeof operand !== 'string' || !operand.trim())) issues.push(`${label}文字比较值无效`);
+    }
   };
   const walk = (node: Condition): void => {
     if ('all' in node || 'any' in node) {
@@ -87,6 +110,11 @@ export function conditionIssues(root: Condition, sources: ConditionSources): str
       if (!definition) issues.push(`未知玩家指标 ${node.playerIndicator.id}`);
       else compareIssue(node.playerIndicator, definition.type, `玩家指标 ${definition.name}`);
     }
+    if ('storyIndicator' in node) {
+      const definition = sources.storyIndicators?.find(entry => entry.id === node.storyIndicator.id);
+      if (!definition) issues.push(`未知剧本指标 ${node.storyIndicator.id}`);
+      else compareIssue(node.storyIndicator, definition.type, `剧本指标 ${definition.name}`);
+    }
     if ('indicator' in node) {
       const definition = sources.npcs.find(npc => npc.id === (node.indicator.npcId ?? sources.ownerNpcId))?.indicators?.find(entry => entry.id === node.indicator.id);
       if (!definition) issues.push(`未知 NPC 指标 ${node.indicator.npcId ?? ''}:${node.indicator.id}`);
@@ -96,7 +124,11 @@ export function conditionIssues(root: Condition, sources: ConditionSources): str
     if ('unlockedLocation' in node && !sources.locations.some(entry => entry.id === node.unlockedLocation)) issues.push(`未知地点 ${node.unlockedLocation}`);
     if ('npcLocation' in node && (!sources.npcs.some(entry => entry.id === node.npcLocation.npcId) || !sources.locations.some(entry => entry.id === node.npcLocation.locationId))) issues.push('未知 NPC 地点');
     if ('period' in node && !sources.periods.includes(node.period)) issues.push(`未知时段 ${node.period}`);
-    if ('playerField' in node && !sources.playerFields.some(entry => entry.id === node.playerField.id)) issues.push(`未知玩家资料 ${node.playerField.id}`);
+    if ('playerField' in node) {
+      const definition = sources.playerFields.find(entry => entry.id === node.playerField.id);
+      if (!definition) issues.push(`未知玩家资料 ${node.playerField.id}`);
+      else compareIssue(node.playerField, definition.type ?? 'input', `开局资料 ${definition.label}`);
+    }
   };
   walk(root);
   return issues;

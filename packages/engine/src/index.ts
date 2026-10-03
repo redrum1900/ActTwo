@@ -1,4 +1,4 @@
-import type { Condition, Effect, GameScript, GameState, Owner } from '@game/contracts';
+import { compareConditionValue, validCalendarDate, type Condition, type Effect, type GameScript, type GameState, type Owner } from '@game/contracts';
 import { syncInventories } from './inventory-projection.js';
 
 export function createInitialState(script: GameScript, player: GameState['player']): GameState {
@@ -7,6 +7,10 @@ export function createInitialState(script: GameScript, player: GameState['player
   const knownNpcItems: GameState['knownNpcItems'] = {};
   const npcIndicators: NonNullable<GameState['npcIndicators']> = {};
   const playerIndicators: NonNullable<GameState['playerIndicators']> = Object.fromEntries((script.playerIndicators ?? []).map((indicator) => [indicator.id, {
+    value: indicator.type === 'tags' ? [...new Set(indicator.initial)] : indicator.initial,
+    playerVisible: indicator.playerVisible,
+  }]));
+  const storyIndicators: NonNullable<GameState['storyIndicators']> = Object.fromEntries((script.storyIndicators ?? []).map((indicator) => [indicator.id, {
     value: indicator.type === 'tags' ? [...new Set(indicator.initial)] : indicator.initial,
     playerVisible: indicator.playerVisible,
   }]));
@@ -33,8 +37,8 @@ export function createInitialState(script: GameScript, player: GameState['player
     scriptId: script.id, scriptVersion: script.version, scriptHash: script.contentHash, player: { ...player },
     locationId: script.startLocation, day: 1, periodIndex: 0,
     playerItems: {}, npcItems, itemStates: Object.fromEntries(script.items.map((item) => [item.id, {
-      owner: null, tags: [...(item.initialTags ?? [])], discovered: false,
-    }])), playerStats, worldStats, npcStats, npcIndicators, playerIndicators, npcLocations,
+      owner: null, discovered: false,
+    }])), playerStats, worldStats, npcStats, npcIndicators, playerIndicators, storyIndicators, npcLocations,
     flags: [], storyEventFlags: [], tags: [], npcTags: Object.fromEntries(script.npcs.map((npc) => [npc.id, []])),
     knownPlayerItems: Object.fromEntries(script.npcs.map((npc) => [npc.id, []])),
     unlockedLocations: [script.startLocation], discoveredNpcs: [], knownNpcItems,
@@ -86,41 +90,27 @@ export function evaluateCondition(condition: Condition | null | undefined, state
   if ('all' in condition) return condition.all.every((part) => evaluateCondition(part, state, script, ownerNpcId));
   if ('any' in condition) return condition.any.some((part) => evaluateCondition(part, state, script, ownerNpcId));
   if ('not' in condition) return !evaluateCondition(condition.not, state, script, ownerNpcId);
+  if ('storyIndicator' in condition) return compareConditionValue(state.storyIndicators?.[condition.storyIndicator.id]?.value, condition.storyIndicator,
+    script?.storyIndicators?.find((entry) => entry.id === condition.storyIndicator.id)?.type);
   if ('indicator' in condition) {
-    const { npcId, id, gte, lte, eq, ne, has, lacks } = condition.indicator;
+    const { npcId, id } = condition.indicator;
     const target = npcId ?? ownerNpcId;
-    const value = target ? state.npcIndicators?.[target]?.[id]?.value : undefined;
-    if (value === undefined) return false;
-    if (gte !== undefined && (typeof value !== 'number' || value < gte)) return false;
-    if (lte !== undefined && (typeof value !== 'number' || value > lte)) return false;
-    if (eq !== undefined && value !== eq) return false;
-    if (ne !== undefined && value === ne) return false;
-    if (has !== undefined && (!Array.isArray(value) || !value.includes(has))) return false;
-    if (lacks !== undefined && (!Array.isArray(value) || value.includes(lacks))) return false;
-    return true;
+    return compareConditionValue(target ? state.npcIndicators?.[target]?.[id]?.value : undefined, condition.indicator,
+      script?.npcs.find((entry) => entry.id === target)?.indicators?.find((entry) => entry.id === id)?.type);
   }
   if ('playerIndicator' in condition) {
-    const { id, gte, lte, eq, ne, has, lacks } = condition.playerIndicator;
-    const value = state.playerIndicators?.[id]?.value;
-    if (value === undefined) return false;
-    if (gte !== undefined && (typeof value !== 'number' || value < gte)) return false;
-    if (lte !== undefined && (typeof value !== 'number' || value > lte)) return false;
-    if (eq !== undefined && value !== eq) return false;
-    if (ne !== undefined && value === ne) return false;
-    if (has !== undefined && (!Array.isArray(value) || !value.includes(has))) return false;
-    if (lacks !== undefined && (!Array.isArray(value) || value.includes(lacks))) return false;
-    return true;
+    return compareConditionValue(state.playerIndicators?.[condition.playerIndicator.id]?.value, condition.playerIndicator,
+      script?.playerIndicators?.find((entry) => entry.id === condition.playerIndicator.id)?.type);
   }
   if ('playerField' in condition) {
     const value = state.player[condition.playerField.id];
-    return condition.playerField.eq !== undefined ? value === condition.playerField.eq :
-      condition.playerField.has !== undefined ? Array.isArray(value) && value.includes(condition.playerField.has) : false;
+    return compareConditionValue(value, condition.playerField, script?.playerFields.find((entry) => entry.id === condition.playerField.id)?.type);
   }
   if ('npcLocation' in condition) return state.npcLocations?.[condition.npcLocation.npcId] === condition.npcLocation.locationId;
   if ('storyEvent' in condition) return state.storyEventFlags?.some((entry) => entry.id === condition.storyEvent) ?? false;
   if ('hasItem' in condition) {
     const runtime = state.itemStates[condition.hasItem.item];
-    return runtime?.owner === condition.hasItem.owner && (condition.hasItem.tags ?? []).every((tag) => runtime.tags.includes(tag));
+    return runtime?.owner === condition.hasItem.owner;
   }
   if ('flag' in condition) return state.flags.includes(condition.flag);
   if ('tag' in condition) return state.tags?.includes(condition.tag) ?? false;
@@ -162,15 +152,18 @@ export function canEnterLocation(script: GameScript, state: GameState, locationI
 
 function applyEffects(script: GameScript, state: GameState, effects: readonly Effect[], ownerNpcId?: string, ownerPlayer = false): { state: GameState; changed: boolean } | null {
   let next = structuredClone(state);
+  const newFormat = !!script.storyIndicators?.some((entry) => entry.systemRole === 'onceRules');
+  const validOwner = (owner: Owner) => owner === 'player' || owner.startsWith('npc:') && script.npcs.some((entry) => entry.id === owner.slice(4)) ||
+    owner.startsWith('location:') && script.locations.some((entry) => entry.id === owner.slice(9));
   for (const effect of effects) {
     if (effect.type === 'giveItem') {
       const runtime = next.itemStates[effect.item];
-      if (!runtime || runtime.owner) return null;
+      if (!runtime || runtime.owner || !validOwner(effect.to)) return null;
       runtime.owner = effect.to;
       runtime.discovered = true;
     } else if (effect.type === 'removeItem' || effect.type === 'transferItem') {
       const runtime = next.itemStates[effect.item];
-      if (!runtime || runtime.owner !== effect.from) return null;
+      if (!runtime || runtime.owner !== effect.from || !validOwner(effect.from) || effect.type === 'transferItem' && !validOwner(effect.to)) return null;
       runtime.owner = effect.type === 'transferItem' ? effect.to : null;
       runtime.discovered = true;
     } else if (effect.type === 'changeIndicator' || effect.type === 'setIndicator' || effect.type === 'setIndicatorVisibility' ||
@@ -178,11 +171,13 @@ function applyEffects(script: GameScript, state: GameState, effects: readonly Ef
       const target = effect.target ?? (effect.npcId ? `npc:${effect.npcId}` : ownerNpcId ? `npc:${ownerNpcId}` : ownerPlayer ? 'player' : null);
       if (!target) return null;
       const npcId = target.startsWith('npc:') ? target.slice(4) : null;
-      if (npcId && !script.npcs.some((entry) => entry.id === npcId)) continue;
+      if (npcId && !script.npcs.some((entry) => entry.id === npcId)) { if (newFormat) return null; else continue; }
       const definition = npcId ? script.npcs.find((entry) => entry.id === npcId)?.indicators?.find((entry) => entry.id === effect.id) :
-        target === 'player' ? script.playerIndicators?.find((entry) => entry.id === effect.id) : undefined;
-      const runtime = npcId ? next.npcIndicators?.[npcId]?.[effect.id] : target === 'player' ? next.playerIndicators?.[effect.id] : undefined;
-      if (!definition || !runtime) return null;
+        target === 'player' ? script.playerIndicators?.find((entry) => entry.id === effect.id) :
+        target === 'story' ? script.storyIndicators?.find((entry) => entry.id === effect.id) : undefined;
+      const runtime = npcId ? next.npcIndicators?.[npcId]?.[effect.id] : target === 'player' ? next.playerIndicators?.[effect.id] :
+        target === 'story' ? next.storyIndicators?.[effect.id] : undefined;
+      if (!definition || !runtime || definition.systemRole) return null;
       if (effect.type === 'setIndicatorVisibility') runtime.playerVisible = effect.visible;
       else if (effect.type === 'changeIndicator') {
         if (definition.type !== 'number' || typeof runtime.value !== 'number' || !Number.isFinite(effect.by)) return null;
@@ -193,6 +188,7 @@ function applyEffects(script: GameScript, state: GameState, effects: readonly Ef
         if (definition.type === 'enum' && (typeof value !== 'string' || !definition.options.includes(value))) return null;
         if (definition.type === 'boolean' && (typeof value !== 'boolean' || (definition.writeOnceTrue && runtime.value === true && value === false))) return null;
         if (definition.type === 'text' && typeof value !== 'string') return null;
+        if (definition.type === 'date' && !validCalendarDate(value)) return null;
         if (definition.type === 'tags' && (!Array.isArray(value) || value.some((tag) => typeof tag !== 'string'))) return null;
         runtime.value = definition.type === 'tags' ? [...new Set(value as string[])] : value;
       } else {
@@ -220,10 +216,6 @@ function applyEffects(script: GameScript, state: GameState, effects: readonly Ef
     } else if (effect.type === 'addNpcTag' || effect.type === 'removeNpcTag') {
       const tags = next.npcTags[effect.npc] ?? (next.npcTags[effect.npc] = []);
       next.npcTags[effect.npc] = effect.type === 'addNpcTag' ? [...new Set([...tags, effect.tag])] : tags.filter((tag) => tag !== effect.tag);
-    } else if (effect.type === 'addItemTag' || effect.type === 'removeItemTag') {
-      const runtime = next.itemStates[effect.item];
-      if (!runtime) return null;
-      runtime.tags = effect.type === 'addItemTag' ? [...new Set([...runtime.tags, effect.tag])] : runtime.tags.filter((tag) => tag !== effect.tag);
     } else if (effect.type === 'discoverItem') {
       if (!next.itemStates[effect.item]) return null;
       next.itemStates[effect.item].discovered = true;
@@ -240,6 +232,9 @@ function applyEffects(script: GameScript, state: GameState, effects: readonly Ef
       const definition = script.storyEvents?.find((entry) => entry.id === effect.eventId);
       if (!definition) return null;
       if (!next.storyEventFlags.some((entry) => entry.id === definition.id)) next.storyEventFlags.push(structuredClone(definition));
+    } else if (effect.type === 'removeStoryEvent') {
+      if (!script.storyEvents?.some((entry) => entry.id === effect.eventId)) return null;
+      next.storyEventFlags = next.storyEventFlags.filter((entry) => entry.id !== effect.eventId);
     } else if (effect.type === 'discoverNpc') {
       if (!next.discoveredNpcs.includes(effect.npc)) next.discoveredNpcs.push(effect.npc);
     } else if (effect.type === 'revealNpcItem') {
@@ -251,27 +246,45 @@ function applyEffects(script: GameScript, state: GameState, effects: readonly Ef
   return { state: refreshWorld(script, syncInventories(next)), changed };
 }
 
+function onceLedgerId(script: GameScript): string | undefined {
+  return script.storyIndicators?.find((entry) => entry.systemRole === 'onceRules')?.id;
+}
+
+function ruleAlreadyApplied(script: GameScript, state: GameState, id: string): boolean {
+  const ledger = onceLedgerId(script);
+  return ledger ? Array.isArray(state.storyIndicators?.[ledger]?.value) && state.storyIndicators[ledger].value.includes(id) : state.completedEvents.includes(id);
+}
+
+function recordAppliedRule(script: GameScript, state: GameState, id: string): void {
+  const ledger = onceLedgerId(script);
+  if (ledger) {
+    const runtime = state.storyIndicators?.[ledger];
+    if (runtime && Array.isArray(runtime.value) && !runtime.value.includes(id)) runtime.value.push(id);
+  } else if (!state.completedEvents.includes(id)) state.completedEvents.push(id);
+}
+
 export function applyEvent(script: GameScript, state: GameState, eventId: string): { applied: boolean; state: GameState } {
   const event = script.events.find((entry) => entry.id === eventId);
-  if (!event || (event.once && state.completedEvents.includes(event.id)) ||
+  if (!event || (event.once && ruleAlreadyApplied(script, state, event.id)) ||
     !evaluateCondition(event.when ?? event.condition, state, script, event.npc)) return { applied: false, state };
   const next = applyEffects(script, state, event.effects, event.npc);
   if (!next?.changed) return { applied: false, state };
-  if (!next.state.completedEvents.includes(event.id)) next.state.completedEvents.push(event.id);
+  recordAppliedRule(script, next.state, event.id);
   return { applied: true, state: next.state };
 }
 
 function applyPrecheckedEvent(script: GameScript, state: GameState, event: GameScript['events'][number]) {
+  if (event.once && ruleAlreadyApplied(script, state, event.id)) return { applied: false, state };
   const next = applyEffects(script, state, event.effects, event.npc);
   if (!next?.changed) return { applied: false, state };
-  if (!next.state.completedEvents.includes(event.id)) next.state.completedEvents.push(event.id);
+  recordAppliedRule(script, next.state, event.id);
   return { applied: true, state: next.state };
 }
 
 export function settlePlayerEvents(script: GameScript, state: GameState, npcId: string, proposedIds: readonly string[]) {
   const eligible = new Set(script.events.filter((event) => event.npc === npcId &&
     event.trigger === 'semantic' &&
-    (!event.once || !state.completedEvents.includes(event.id)) && evaluateCondition(event.when ?? event.condition, state, script, npcId)).map((event) => event.id));
+    (!event.once || !ruleAlreadyApplied(script, state, event.id)) && evaluateCondition(event.when ?? event.condition, state, script, npcId)).map((event) => event.id));
   const ordered = script.events.filter((event) => event.npc === npcId &&
     proposedIds.includes(event.id) && eligible.has(event.id))
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.id.localeCompare(b.id));
@@ -293,7 +306,7 @@ export function runAutomaticRules(script: GameScript, state: GameState, actionKi
       .map((rule) => ({ owner: 'player', rule, npcId: undefined as string | undefined })),
     ...script.events.filter((rule) => rule.trigger === 'automatic')
       .map((rule) => ({ owner: `npc:${rule.npc}`, rule, npcId: rule.npc as string | undefined })),
-  ].filter(({ rule, npcId }) => (!rule.once || !state.completedEvents.includes(rule.id)) &&
+  ].filter(({ rule, npcId }) => (!rule.once || !ruleAlreadyApplied(script, state, rule.id)) &&
     evaluateCondition(rule.when ?? rule.condition, state, script, npcId))
     .sort((a, b) => (b.rule.priority ?? 0) - (a.rule.priority ?? 0) || a.owner.localeCompare(b.owner) || a.rule.id.localeCompare(b.rule.id));
   let next = state;
@@ -305,7 +318,7 @@ export function runAutomaticRules(script: GameScript, state: GameState, actionKi
     const result = applyEffects(script, next, rule.effects, npcId, owner === 'player');
     if (!result?.changed) continue;
     next = result.state;
-    if (!next.completedEvents.includes(rule.id)) next.completedEvents.push(rule.id);
+    recordAppliedRule(script, next, rule.id);
     appliedIds.push(rule.id);
     if (group) groups.add(group);
   }
@@ -319,7 +332,7 @@ export function searchLocation(script: GameScript, state: GameState) {
   for (const placement of location?.items ?? []) {
     const runtime = next.itemStates[placement.item];
     if (runtime?.owner !== `location:${state.locationId}` || runtime.discovered) continue;
-    if (!placement.hidden || (placement.discoverWhen && evaluateCondition(placement.discoverWhen, next, script))) {
+    if (evaluateCondition(placement.discoverWhen, next, script)) {
       runtime.discovered = true;
       discovered.push(placement.item);
     }
@@ -331,7 +344,7 @@ export function takeLocationItem(script: GameScript, state: GameState, itemId: s
   const placement = script.locations.find((entry) => entry.id === state.locationId)?.items?.find((entry) => entry.item === itemId);
   const runtime = state.itemStates[itemId];
   if (!placement || runtime?.owner !== `location:${state.locationId}` || !runtime.discovered) return { applied: false, state, text: '这里没有可获取的道具。' };
-  if (!placement.takeWhen || !evaluateCondition(placement.takeWhen, state, script)) return { applied: false, state, text: placement.blockedHint ?? '暂时无法取得。' };
+  if (!evaluateCondition(placement.takeWhen, state, script)) return { applied: false, state, text: placement.blockedHint ?? '暂时无法取得。' };
   const next = structuredClone(state);
   next.itemStates[itemId].owner = 'player';
   return { applied: true, state: syncInventories(next), text: `获得了[${script.items.find((item) => item.id === itemId)?.name ?? itemId}]。` };
@@ -356,7 +369,7 @@ export function makeView(script: GameScript, state: GameState) {
     const runtime = state.itemStates[id];
     const variant = definition?.variants?.find((entry) => evaluateCondition(entry.when, state, script));
     return { id, count: 1, name: definition?.name ?? id, image: definition?.image, description: variant?.description ?? definition?.description ?? '',
-      detail: variant?.detail ?? definition?.detail ?? '', tags: runtime?.tags.filter((tag) => !definition?.hiddenTags?.includes(tag)) ?? [] };
+      detail: variant?.detail ?? definition?.detail ?? '' };
   };
   const locations = script.locations.filter((entry) => state.unlockedLocations.includes(entry.id))
     .map(({ id, name, description }) => ({ id, name, description, enterable: canEnterLocation(script, state, id) }));
@@ -395,7 +408,7 @@ export function makeView(script: GameScript, state: GameState) {
     day: state.day, period: script.periods[state.periodIndex], locationId: state.locationId,
     location: location ? { id: location.id, name: location.name, description: location.description,
       items: (location.items ?? []).filter((placement) => state.itemStates[placement.item]?.owner === `location:${location.id}` && state.itemStates[placement.item]?.discovered)
-        .map((placement) => ({ ...itemView(placement.item), canTake: !!placement.takeWhen && evaluateCondition(placement.takeWhen, state, script), blockedHint: placement.blockedHint })),
+        .map((placement) => ({ ...itemView(placement.item), canTake: evaluateCondition(placement.takeWhen, state, script), blockedHint: placement.blockedHint })),
       spots: location.spots.filter((spot) => evaluateCondition(spot.visibleWhen, state, script)).map((spot) => ({
         id: spot.id, name: spot.name, description: spot.description, done: state.exploredSpots.includes(spot.id),
       })) } : null,

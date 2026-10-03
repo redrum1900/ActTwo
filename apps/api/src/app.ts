@@ -1,40 +1,39 @@
-import { randomUUID } from 'node:crypto';
 import express, { type Request, type Response } from 'express';
 import type { ChatAdapter } from './chat-service.js';
 import { runChat } from './chat-service.js';
 import { AiServiceError } from './ai-adapter.js';
-import type { SaveStore } from './save-store.js';
-import type { FieldDefinition, GameScript, GameState } from '@game/contracts';
+import type { SaveRecord, SaveStore } from './save-store.js';
+import type { MysqlSaveStore } from './db/mysql-save-store.js';
+import type { MysqlCreatorStore } from './db/mysql-auth-store.js';
+import type { MysqlProjectStore } from './db/mysql-project-store.js';
+import type { MysqlReviewStore } from './db/mysql-review-store.js';
+import { createMysqlCoverAssets } from './db/mysql-cover-assets.js';
+import type { Pool } from 'mysql2/promise';
+import { type GameScript, type GameState } from '@game/contracts';
+import { contentHashOf } from '@game/script';
 import { advanceTime, canEnterLocation, createInitialState, discoverPresentNpcs, evaluateCondition, exploreSpot, makeView, refreshWorld, searchLocation, takeLocationItem } from '@game/engine';
 import { appendActivity, settleWorld, type ActivityAction } from '@game/engine/activity-log';
-import { createScriptRepository, type ScriptRepository } from './script-repository.js';
+import { createScriptRepository, createMysqlScriptRepository, ScriptNotFoundError, type ScriptRepository, type AsyncScriptRepository } from './script-repository.js';
 import { createMemoryWorker } from './memory-worker.js';
 import { createCreatorRouter } from './creator/auth-router.js';
 import type { CreatorStore } from './creator/auth-store.js';
 import { createProjectRouter } from './creator/project-router.js';
+import { createImportRouter } from './creator/import-router.js';
+import { createMysqlCreatorImportStore, type MysqlCreatorImportStore } from './db/mysql-creator-import.js';
 import type { ProjectStore } from './creator/project-store.js';
 import { createReviewRouter } from './creator/review-router.js';
 import type { ReviewStore } from './creator/review-store.js';
 import { createCoverAssets, defaultCoverDirectory } from './creator/cover-assets.js';
-
-function readPlayer(fields: readonly FieldDefinition[], input: unknown): GameState['player'] {
-  const values = (input && typeof input === 'object' && !Array.isArray(input)) ? input as Record<string, unknown> : {};
-  const player: GameState['player'] = {};
-  for (const field of fields) {
-    const raw = field.editable === false ? field.default : values[field.id] ?? field.default ?? (field.type === 'checkbox' ? [] : '');
-    if (field.type === 'checkbox') {
-      if (!Array.isArray(raw) || raw.some((value) => typeof value !== 'string' || !field.options?.some((option) => option.value === value))) throw new Error(`${field.label}选项无效`);
-      if (field.required && raw.length === 0) throw new Error(`请填写${field.label}`);
-      player[field.id] = raw as string[];
-    } else {
-      if (typeof raw !== 'string' || raw.length > 100 || (field.required && !raw.trim())) throw new Error(`请正确填写${field.label}`);
-      if (field.type === 'date' && raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new Error(`${field.label}日期无效`);
-      if ((field.type === 'radio' || field.type === 'select') && !field.options?.some((option) => option.value === raw)) throw new Error(`${field.label}选项无效`);
-      player[field.id] = raw;
-    }
-  }
-  return player;
-}
+import { accountForRequest } from './account-session.js';
+import type { CreatorAccount } from './creator/auth-store.js';
+import { randomUUID } from 'node:crypto';
+import type { AiAttribution } from './ai-audit.js';
+import { createAiAuditRouter } from './ai-audit-router.js';
+import type { MysqlAiAuditStore } from './db/mysql-ai-audit-store.js';
+import { createPlaytestRouter } from './creator/playtest-router.js';
+import type { MysqlPlaytestStore } from './db/mysql-playtest-store.js';
+import { readPlayer } from './read-player.js';
+export { readPlayer } from './read-player.js';
 
 function visiblePayload(script: GameScript, state: GameState, revision: number, adapter: ChatAdapter) {
   const view = makeView(script, state);
@@ -45,130 +44,174 @@ function visiblePayload(script: GameScript, state: GameState, revision: number, 
   return { view, revision, hints, aiMode: adapter.mode };
 }
 
-export function createApp(store: SaveStore, adapter: ChatAdapter, options: { debugEnabled?: boolean; creatorStore?: CreatorStore; projectStore?: ProjectStore; reviewStore?: ReviewStore; scripts?: ScriptRepository; coversDir?: string } = {}) {
+export function createApp(store: SaveStore | MysqlSaveStore, adapter: ChatAdapter, options: {
+  debugEnabled?: boolean; creatorStore?: CreatorStore | MysqlCreatorStore; projectStore?: ProjectStore | MysqlProjectStore;
+  reviewStore?: ReviewStore | MysqlReviewStore; scripts?: ScriptRepository | AsyncScriptRepository;
+  coversDir?: string; mysqlPool?: Pool; importStore?: MysqlCreatorImportStore; auditStore?: MysqlAiAuditStore;
+  playtestStore?: MysqlPlaytestStore;
+} = {}) {
   const app = express();
-  const scripts = options.scripts ?? createScriptRepository(options.projectStore);
+  const scripts = options.scripts ?? (options.mysqlPool && options.projectStore
+    ? createMysqlScriptRepository(options.projectStore as MysqlProjectStore)
+    : createScriptRepository(options.projectStore as ProjectStore | undefined));
   const covers = options.creatorStore && options.projectStore
-    ? createCoverAssets(options.creatorStore.db, options.coversDir ?? defaultCoverDirectory(), options.projectStore)
+    ? options.mysqlPool
+      ? createMysqlCoverAssets(options.mysqlPool, options.coversDir ?? defaultCoverDirectory(), options.projectStore as MysqlProjectStore)
+      : createCoverAssets((options.creatorStore as CreatorStore).db, options.coversDir ?? defaultCoverDirectory(), options.projectStore as ProjectStore)
     : null;
   const queueMemory = createMemoryWorker(store, adapter);
-  const inFlightTurns = new Map<string, { npcId: string; text: string; task: Promise<{ game: GameScript; save: NonNullable<ReturnType<SaveStore['getAuto']>>; result: Awaited<ReturnType<typeof runChat>> }> }>();
+  const formalAudit = (accountId: string, game: GameScript, operationId: string): AiAttribution =>
+    ({ accountId, source: 'formal', storyId: game.id, releaseVersion: game.version, operationId });
+  const inFlightTurns = new Map<string, { npcId: string; text: string; task: Promise<{ game: GameScript; save: SaveRecord; result: Awaited<ReturnType<typeof runChat>> }> }>();
   app.use(express.json({ limit: '2mb' }));
   if (options.creatorStore) app.use('/api/creator', createCreatorRouter(options.creatorStore));
   if (options.creatorStore && options.projectStore && options.reviewStore)
-    app.use('/api/creator', createProjectRouter(options.creatorStore, options.projectStore, options.reviewStore, covers!));
+    app.use('/api/creator', createProjectRouter(options.creatorStore, options.projectStore, options.reviewStore, covers!, !options.mysqlPool));
+  if (options.creatorStore && options.mysqlPool)
+    app.use('/api/creator', createImportRouter(options.creatorStore,
+      options.importStore ?? createMysqlCreatorImportStore(options.mysqlPool), undefined, options.auditStore));
+  if (options.creatorStore && options.projectStore && options.playtestStore)
+    app.use('/api/creator', createPlaytestRouter(options.creatorStore,
+      options.projectStore as MysqlProjectStore, options.playtestStore, adapter));
   if (options.creatorStore && options.reviewStore)
     app.use('/api/creator/reviews', createReviewRouter(options.creatorStore, options.reviewStore));
-  if (covers) app.get('/api/covers/:assetId', (req, res) => {
+  if (covers) app.get('/api/covers/:assetId', async (req, res) => {
     try {
-      const image = covers.published(req.params.assetId as string);
+      const image = await covers.published(req.params.assetId as string);
       res.type(image.mime).set('Cache-Control', 'public, max-age=86400').send(image.bytes);
     } catch { res.status(404).json({ error: '封面不存在' }); }
   });
-  if (covers) app.get('/api/item-images/:assetId', (req, res) => {
+  if (covers) app.get('/api/item-images/:assetId', async (req, res) => {
     try {
-      const image = covers.publishedItem(req.params.assetId as string);
+      const image = await covers.publishedItem(req.params.assetId as string);
       res.type(image.mime).set('Cache-Control', 'public, max-age=86400').send(image.bytes);
     } catch { res.status(404).json({ error: '道具图片不存在' }); }
   });
-  app.use('/api', (req, res, next) => {
-    const cookie = req.headers.cookie?.match(/(?:^|;\s*)gd_guest=([a-f0-9-]{36})(?:;|$)/)?.[1];
-    const owner = cookie ?? randomUUID();
-    if (!cookie) res.cookie('gd_guest', owner, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 365 * 24 * 60 * 60 * 1000 });
-    res.locals.owner = owner;
-    next();
+  app.use('/api', async (req, res, next) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers.origin) {
+      try {
+        if (new URL(req.headers.origin).host !== req.headers.host) return res.status(403).json({ error: '请求来源不匹配' });
+      } catch { return res.status(403).json({ error: '请求来源不匹配' }); }
+    }
+    try {
+      res.locals.account = options.creatorStore ? await accountForRequest(req, options.creatorStore) : null;
+      next();
+    } catch (error) { next(error); }
   });
+  if (options.auditStore) app.use('/api/usage', createAiAuditRouter(options.auditStore));
 
-  const owner = (res: Response) => res.locals.owner as string;
-  const script = (req: Request) => scripts.get(req.params.gameId as string);
+  const owner = (res: Response) => (res.locals.account as CreatorAccount).id;
+  const script = async (req: Request) => scripts.get(req.params.gameId as string);
   const compatible = (game: GameScript, state: GameState) => state.scriptVersion === game.version && state.scriptHash === game.contentHash &&
     game.npcs.every((npc) => !npc.indicators || npc.indicators.every((indicator) => state.npcIndicators?.[npc.id]?.[indicator.id] !== undefined));
-  const current = (req: Request, res: Response) => {
-    const game = script(req);
-    const save = store.getAuto(owner(res), game.id);
+  const savedScript = async (gameId: string, state: GameState): Promise<GameScript | null> => {
+    if (state.scriptId !== gameId || !state.scriptVersion || !state.scriptHash) return null;
+    const game = scripts.getExact
+      ? await scripts.getExact(gameId, state.scriptVersion, state.scriptHash)
+      : await scripts.get(gameId);
+    return game && compatible(game, state) && contentHashOf(game) === state.scriptHash ? game : null;
+  };
+  const current = async (req: Request, res: Response) => {
+    const gameId = req.params.gameId as string;
+    const save = await store.getAuto(owner(res), gameId);
     if (!save) throw new Error('没有自动存档，请先开始新游戏');
-    if (!compatible(game, save.state)) throw new Error('存档剧本版本与当前安装版本不同');
+    const game = await savedScript(gameId, save.state);
+    if (!game) throw new Error('存档对应的已发布剧本版本不存在或内容不匹配');
     return { game, save: { ...save, state: refreshWorld(game, save.state) } };
   };
-  const galleryView = (game: GameScript, res: Response) => {
-    const unlocked = store.getGallery(owner(res), game.id);
+  const galleryView = async (game: GameScript, res: Response) => {
+    const unlocked = res.locals.account ? await store.getGallery(owner(res), game.id) : [];
     return [...game.endings.map((entry) => ({ ...entry, kind: 'ending' as const })),
       ...game.achievements.map((entry) => ({ ...entry, kind: 'achievement' as const }))]
       .map((entry) => ({ id: entry.id, kind: entry.kind, unlocked: unlocked.some((value) => value.id === entry.id && value.kind === entry.kind),
         name: entry.hidden && !unlocked.some((value) => value.id === entry.id && value.kind === entry.kind) ? '？？？' : entry.name,
         description: entry.hidden && !unlocked.some((value) => value.id === entry.id && value.kind === entry.kind) ? '继续游戏以解锁' : entry.description }));
   };
-  const currentPayload = (res: Response, game: GameScript, save: NonNullable<ReturnType<SaveStore['getAuto']>>, extra: object = {}) => {
+  const currentPayload = async (res: Response, game: GameScript, save: SaveRecord, extra: object = {}) => {
     const state = refreshWorld(game, save.state);
-    return { ...visiblePayload(game, state, save.revision, adapter), gallery: galleryView(game, res), ...extra };
+    return { ...visiblePayload(game, state, save.revision, adapter), gallery: await galleryView(game, res), ...extra };
   };
-  const sendCurrent = (res: Response, game: GameScript, save: NonNullable<ReturnType<SaveStore['getAuto']>>, extra: object = {}) =>
-    res.json(currentPayload(res, game, save, extra));
+  const sendCurrent = async (res: Response, game: GameScript, save: SaveRecord, extra: object = {}) =>
+    res.json(await currentPayload(res, game, save, extra));
 
-  app.get('/api/catalog', (_req, res) => {
-    res.json({ games: scripts.list().map((game) => ({ id: game.id, version: game.version, title: game.title, subtitle: game.subtitle, cover: game.cover,
-      description: game.description, hasAuto: !!store.getAuto(owner(res), game.id) && compatible(game, store.getAuto(owner(res), game.id)!.state) })) });
-  });
-  app.get('/api/games/:gameId', (req, res) => {
-    const game = script(req);
-    res.json({ id: game.id, title: game.title, subtitle: game.subtitle, description: game.description, version: game.version, cover: game.cover,
-      guide: game.guide ? { intro: game.guide.intro, steps: game.guide.steps.map(({ id, title, text }) => ({ id, title, text })) } : undefined,
-      playerFields: game.playerFields, hasAuto: !!store.getAuto(owner(res), game.id) && compatible(game, store.getAuto(owner(res), game.id)!.state), gallery: galleryView(game, res) });
-  });
-  app.get('/api/games/:gameId/current', (req, res) => { const { game, save } = current(req, res); sendCurrent(res, game, save); });
-  app.get('/api/games/:gameId/debug', (req, res) => {
-    if (!options.debugEnabled) return res.status(404).json({ error: '诊断接口未开启' });
-    const { save } = current(req, res);
-    return res.json({ turns: save.state.ruleDiagnostics ?? [] });
-  });
-  app.post('/api/games/:gameId/new', (req, res) => {
-    const game = script(req);
-    const state = createInitialState(game, readPlayer(game.playerFields, req.body?.player));
-    const save = store.putAuto(owner(res), game.id, state);
-    sendCurrent(res, game, save);
-  });
-  app.get('/api/games/:gameId/slots', (req, res) => {
-    const game = script(req);
-    res.json({ slots: store.listSlots(owner(res), game.id).filter(({ state }) => compatible(game, state)).map(({ slot, label, updatedAt, state }) => ({
-      slot, label, updatedAt, playerName: state.player.name ?? '', day: state.day,
-      location: game.locations.find((entry) => entry.id === state.locationId)?.name ?? state.locationId,
+  app.get('/api/catalog', async (_req, res) => {
+    const games = await scripts.list();
+    res.json({ games: await Promise.all(games.map(async game => {
+      const save = res.locals.account ? await store.getAuto(owner(res), game.id) : null;
+      return { id: game.id, version: game.version, title: game.title, subtitle: game.subtitle, cover: game.cover,
+        description: game.description, hasAuto: !!save && !!await savedScript(game.id, save.state) };
     })) });
   });
-  app.post('/api/games/:gameId/slots/:slot', (req, res) => {
-    const { game, save } = current(req, res);
+  app.get('/api/games/:gameId', async (req, res) => {
+    const game = await script(req);
+    const save = res.locals.account ? await store.getAuto(owner(res), game.id) : null;
+    res.json({ id: game.id, title: game.title, subtitle: game.subtitle, description: game.description, version: game.version, cover: game.cover,
+      guide: game.guide ? { intro: game.guide.intro, steps: game.guide.steps.map(({ id, title, text }) => ({ id, title, text })) } : undefined,
+      playerFields: game.playerFields, hasAuto: !!save && !!await savedScript(game.id, save.state), gallery: await galleryView(game, res) });
+  });
+  app.use('/api/games/:gameId', (_req, res, next) => {
+    if (!res.locals.account) return res.status(401).json({ error: '请先登录' });
+    next();
+  });
+  app.get('/api/games/:gameId/current', async (req, res) => { const { game, save } = await current(req, res); await sendCurrent(res, game, save); });
+  app.get('/api/games/:gameId/debug', async (req, res) => {
+    if (!options.debugEnabled) return res.status(404).json({ error: '诊断接口未开启' });
+    const { save } = await current(req, res);
+    return res.json({ turns: save.state.ruleDiagnostics ?? [] });
+  });
+  app.post('/api/games/:gameId/new', async (req, res) => {
+    const game = await script(req);
+    const state = createInitialState(game, readPlayer(game.playerFields, req.body?.player));
+    const save = await store.putAuto(owner(res), game.id, state);
+    await sendCurrent(res, game, save);
+  });
+  app.get('/api/games/:gameId/slots', async (req, res) => {
+    const game = await script(req);
+    res.json({ slots: await Promise.all((await store.listSlots(owner(res), game.id)).map(async ({ slot, label, updatedAt, state }) => {
+      const pinned = await savedScript(game.id, state);
+      return { slot, label, updatedAt, scriptVersion: state.scriptVersion, loadable: !!pinned,
+        playerName: state.player.name ?? '', day: state.day,
+        location: pinned?.locations.find((entry) => entry.id === state.locationId)?.name ?? state.locationId };
+    })) });
+  });
+  app.post('/api/games/:gameId/slots/:slot', async (req, res) => {
+    const { game, save } = await current(req, res);
     const slot = Number(req.params.slot);
-    const manual = store.saveManual(owner(res), game.id, slot, String(req.body?.label ?? `存档 ${slot}`), save.state);
+    const manual = await store.saveManual(owner(res), game.id, slot, String(req.body?.label ?? `存档 ${slot}`), save.state);
     res.json({ slot: manual.slot, label: manual.label, updatedAt: manual.updatedAt });
   });
-  app.post('/api/games/:gameId/slots/:slot/load', (req, res) => {
-    const game = script(req);
-    const manual = store.getSlot(owner(res), game.id, Number(req.params.slot));
-    if (manual && !compatible(game, manual.state)) throw new Error('存档剧本版本与当前安装版本不同');
-    const loaded = store.loadManual(owner(res), game.id, Number(req.params.slot));
+  app.post('/api/games/:gameId/slots/:slot/load', async (req, res) => {
+    const gameId = req.params.gameId as string;
+    const manual = await store.getSlot(owner(res), gameId, Number(req.params.slot));
+    if (!manual) throw new Error('存档不存在');
+    const game = await savedScript(gameId, manual.state);
+    if (!game) throw new Error('存档对应的已发布剧本版本不存在或内容不匹配');
+    const loaded = await store.loadManual(owner(res), gameId, Number(req.params.slot));
     if (!loaded) throw new Error('存档不存在');
-    sendCurrent(res, game, loaded);
+    await sendCurrent(res, game, loaded);
   });
-  app.delete('/api/games/:gameId/slots/:slot', (req, res) => {
-    const game = script(req);
-    store.deleteManual(owner(res), game.id, Number(req.params.slot));
+  app.delete('/api/games/:gameId/slots/:slot', async (req, res) => {
+    const game = await script(req);
+    await store.deleteManual(owner(res), game.id, Number(req.params.slot));
     res.json({ ok: true });
   });
-  app.get('/api/games/:gameId/slots/:slot/export', (req, res) => {
-    const game = script(req);
-    const save = store.getSlot(owner(res), game.id, Number(req.params.slot));
+  app.get('/api/games/:gameId/slots/:slot/export', async (req, res) => {
+    const game = await script(req);
+    const save = await store.getSlot(owner(res), game.id, Number(req.params.slot));
     if (!save) throw new Error('存档不存在');
     res.setHeader('Content-Disposition', `attachment; filename="${game.id}-slot-${save.slot}.json"`);
     res.json({ format: 'game-dd-save-v1', gameId: game.id, scriptVersion: save.state.scriptVersion, state: save.state });
   });
-  app.post('/api/games/:gameId/import', (req, res) => {
-    const game = script(req);
+  app.post('/api/games/:gameId/import', async (req, res) => {
+    const gameId = req.params.gameId as string;
     const state = req.body?.state as GameState | undefined;
-    if (req.body?.format !== 'game-dd-save-v1' || req.body?.gameId !== game.id || state?.scriptId !== game.id || !compatible(game, state) || !state.player || !state.chats) throw new Error('存档格式或剧本版本不匹配');
-    const save = store.putAuto(owner(res), game.id, state);
-    sendCurrent(res, game, save);
+    const game = state && await savedScript(gameId, state);
+    if (req.body?.format !== 'game-dd-save-v1' || req.body?.gameId !== gameId || !game || !state.player || !state.chats) throw new Error('存档格式或剧本版本不匹配');
+    const save = await store.putAuto(owner(res), gameId, state);
+    await sendCurrent(res, game, save);
   });
-  app.post('/api/games/:gameId/action', (req, res) => {
-    const { game, save } = current(req, res);
+  app.post('/api/games/:gameId/action', async (req, res) => {
+    const { game, save } = await current(req, res);
     if (req.body?.revision !== save.revision) throw new Error('存档已变化，请刷新后重试');
     let next = save.state;
     let text = '';
@@ -203,27 +246,30 @@ export function createApp(store: SaveStore, adapter: ChatAdapter, options: { deb
     const action = { kind, summary: text };
     const settled = settleWorld(game, save.state, next, action);
     const logged = appendActivity(game, settled.state, action, settled.changes);
-    const updated = store.updateAutoWithGallery(owner(res), game.id, save.revision, logged);
-    sendCurrent(res, game, updated, { actionText: text, changes: settled.changes });
+    const updated = await store.updateAutoWithGallery(owner(res), game.id, save.revision, logged);
+    await sendCurrent(res, game, updated, { actionText: text, changes: settled.changes });
   });
   app.post('/api/games/:gameId/chat', async (req, res) => {
-    const { game, save } = current(req, res);
+    const { game, save } = await current(req, res);
     if (req.body?.revision !== save.revision) throw new Error('存档已变化，请刷新后重试');
-    const result = await runChat(game, save.state, String(req.body?.npcId ?? ''), String(req.body?.text ?? ''), adapter);
-    const updated = store.updateAutoWithGallery(owner(res), game.id, save.revision, result.state);
-    sendCurrent(res, game, updated, { appliedEvents: result.appliedEvents.map(({ narration }) => ({ narration })), changes: result.changes });
-    void queueMemory(owner(res), game, updated, String(req.body?.npcId ?? ''));
+    const attribution = formalAudit(owner(res), game, randomUUID());
+    const result = await runChat(game, save.state, String(req.body?.npcId ?? ''), String(req.body?.text ?? ''), adapter,
+      { audit: attribution });
+    const updated = await store.updateAutoWithGallery(owner(res), game.id, save.revision, result.state);
+    await sendCurrent(res, game, updated, { appliedEvents: result.appliedEvents.map(({ narration }) => ({ narration })), changes: result.changes });
+    void queueMemory(owner(res), game, updated, String(req.body?.npcId ?? ''), attribution);
   });
   app.post('/api/games/:gameId/chat/stream', async (req, res) => {
     const write = (event: string, value: object) => { if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`); };
     try {
-      const game = script(req);
+      const gameId = req.params.gameId as string;
       const turnId = String(req.body?.turnId ?? '');
       if (!turnId || turnId.length > 100) throw new Error('对话轮次 ID 无效');
       const ownerId = owner(res);
-      const stored = store.getAuto(ownerId, game.id);
+      const stored = await store.getAuto(ownerId, gameId);
       if (!stored) throw new Error('没有自动存档，请先开始新游戏');
-      if (!compatible(game, stored.state)) throw new Error('存档剧本版本与当前安装版本不同');
+      const game = await savedScript(gameId, stored.state);
+      if (!game) throw new Error('存档对应的已发布剧本版本不存在或内容不匹配');
       const key = JSON.stringify([ownerId, game.id, turnId]);
       const npcId = String(req.body?.npcId ?? '');
       const playerText = String(req.body?.text ?? '').trim();
@@ -240,23 +286,23 @@ export function createApp(store: SaveStore, adapter: ChatAdapter, options: { deb
       res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders();
       if (alreadySaved) {
-        write('final', { session: currentPayload(res, game, stored, { changes: [] }) });
+        write('final', { session: await currentPayload(res, game, stored, { changes: [] }) });
       } else {
         let task = inFlight?.task;
         if (!task) {
           task = (async () => {
             const result = await runChat(game, stored.state, npcId,
-              playerText, adapter, { turnId, onDraft: (delta) => write('draft', { delta }),
+              playerText, adapter, { turnId, audit: formalAudit(ownerId, game, turnId), onDraft: (delta) => write('draft', { delta }),
                 onStatus: (text) => write('status', { text }) });
-            const saved = store.updateAutoWithGallery(ownerId, game.id, stored.revision, result.state);
-            void queueMemory(ownerId, game, saved, npcId);
+            const saved = await store.updateAutoWithGallery(ownerId, game.id, stored.revision, result.state);
+            void queueMemory(ownerId, game, saved, npcId, formalAudit(ownerId, game, turnId));
             return { game, save: saved, result };
           })();
           inFlightTurns.set(key, { npcId, text: playerText, task });
           void task.finally(() => inFlightTurns.delete(key)).catch(() => {});
         }
         const completed = await task;
-        write('final', { session: currentPayload(res, completed.game, completed.save,
+        write('final', { session: await currentPayload(res, completed.game, completed.save,
           { appliedEvents: completed.result.appliedEvents.map(({ narration }) => ({ narration })), changes: completed.result.changes }) });
       }
     } catch (error) {
@@ -268,8 +314,9 @@ export function createApp(store: SaveStore, adapter: ChatAdapter, options: { deb
   });
   app.use('/api', (error: Error, _req: Request, res: Response, _next: express.NextFunction) => {
     const message = error.message || '服务器错误';
-    const status = error instanceof AiServiceError ? error.status : (error as Error & { status?: number }).status === 413 ? 413
-      : message.includes('存档已变化') ? 409 : message.includes('没有自动存档') ? 404 : 400;
+    const status = error instanceof AiServiceError ? error.status : error instanceof ScriptNotFoundError ? 404
+      : (error as Error & { status?: number }).status === 413 ? 413
+        : message.includes('存档已变化') ? 409 : message.includes('没有自动存档') ? 404 : 400;
     res.status(status).json({ error: message });
   });
   return app;

@@ -6,6 +6,7 @@ import { ProjectError } from '../creator/project-store.js';
 import type { ReviewSubmission, ReviewSummary, ReviewStatus } from '../creator/review-store.js';
 import type { MysqlProjectStore } from './mysql-project-store.js';
 import { withTransaction } from './mysql.js';
+import { createMysqlPublishedVersions } from './mysql-published-versions.js';
 
 interface ReviewRow extends RowDataPacket {
   id: string; project_id: string; project_title: string; author_id: string; author_username: string;
@@ -19,13 +20,14 @@ const toSubmission = (row: ReviewRow): ReviewSubmission => {
   const script = JSON.parse(row.script_json) as GameScript;
   return { id: row.id, projectId: row.project_id, projectTitle: script.title,
     authorId: row.author_id, authorUsername: row.author_username, script,
-    contentHash: row.content_hash, version: row.version, status: row.status,
+    contentHash: row.content_hash, version: row.status === 'approved' ? row.version : '', status: row.status,
     submittedAt: row.submitted_at, reviewedAt: row.reviewed_at,
     reviewerId: row.reviewer_id, rejectionReason: row.rejection_reason };
 };
 const summary = ({ script: _script, ...rest }: ReviewSubmission): ReviewSummary => rest;
 
 export function createMysqlReviewStore(pool: Pool, projects: MysqlProjectStore) {
+  const publications = createMysqlPublishedVersions(pool);
   const requireAdmin = async (connection: PoolConnection, id: string) => {
     const [rows] = await connection.execute<RowDataPacket[]>('SELECT role FROM creator_accounts WHERE id=?', [id]);
     if (rows[0]?.role !== 'admin') throw new ProjectError('需要管理员权限', 403);
@@ -36,7 +38,7 @@ export function createMysqlReviewStore(pool: Pool, projects: MysqlProjectStore) 
     if (!row) throw new ProjectError('审核申请不存在', 404);
     if (row.status !== 'pending') throw new ProjectError('该申请已审核', 409);
     const [projects] = await connection.execute<RowDataPacket[]>(
-      'SELECT deleted_at FROM creator_projects WHERE id=?', [row.project_id]);
+      'SELECT deleted_at FROM creator_projects WHERE id=? FOR UPDATE', [row.project_id]);
     if (!projects[0] || projects[0].deleted_at) throw new ProjectError('故事已删除，不能审核', 409);
     return row;
   };
@@ -86,15 +88,12 @@ export function createMysqlReviewStore(pool: Pool, projects: MysqlProjectStore) 
         const script = JSON.parse(row.script_json) as GameScript;
         if (contentHashOf(script) !== row.content_hash || script.contentHash !== row.content_hash)
           throw new ProjectError('审核快照校验失败', 409);
+        const published = await publications.publish(connection, row.project_id, row.id, script);
         const timestamp = new Date().toISOString();
-        await connection.execute(`INSERT INTO published_scripts
-          (project_id,script_json,version,content_hash,published_at) VALUES (?,?,?,?,?)
-          ON DUPLICATE KEY UPDATE script_json=VALUES(script_json),version=VALUES(version),
-          content_hash=VALUES(content_hash),published_at=VALUES(published_at)`,
-        [row.project_id, row.script_json, row.version, row.content_hash, timestamp]);
         await connection.execute('UPDATE creator_projects SET published_at=? WHERE id=?', [timestamp, row.project_id]);
         await connection.execute(`UPDATE creator_review_submissions
-          SET status='approved',reviewer_id=?,reviewed_at=? WHERE id=? AND status='pending'`, [adminId, timestamp, id]);
+          SET status='approved',version=?,reviewer_id=?,reviewed_at=? WHERE id=? AND status='pending'`,
+        [published.version, adminId, timestamp, id]);
       });
       return (await store.get(id))!;
     },

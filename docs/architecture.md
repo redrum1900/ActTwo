@@ -2,26 +2,26 @@
 
 ## 目标和依赖
 
-同一套 React 页面、Express API 和规则引擎运行不同的 JSON 剧本包。当前可玩的样例是《屏幕那端的剑道女生》。
+同一套 React 页面、Express API 和规则引擎运行不同的 JSON 剧本快照。玩家目录只读取 MySQL 中已审核发布的故事；新版《屏幕那端的剑道女生》目前是管理员草稿。
 
 ```text
 React 页面 ──HTTP──> API 编排 ──> 纯规则引擎
                          ├──> AI 适配器
-                         ├──> SQLite 存档
-                         └──> 剧本加载与校验
+                         ├──> MySQL 存档／图鉴／创作中心
+                         └──> 已发布快照加载与校验
 ```
 
 `packages/contracts` 提供共同类型。引擎只读取剧本和存档，返回新状态，不依赖数据库或模型服务。API 管理修订号、对话事务、自动存档和图鉴持久化。
 
 ## 静态剧本与动态存档
 
-`content/<game-id>/` 的 JSON 是不可变的设计数据。`locations.json` 是地点的唯一配置入口：地点名称、描述、`interactionMode`、`visibleWhen`、`enterWhen`、调查点和物品都在这里。没有独立的 `placements.json`。`visibleWhen` 首次满足后把地点 ID 加入存档的 `unlockedLocations`；`enterWhen` 每次进入前重新检查。前端用后端返回的 `enterable` 展示禁用状态，API 同样复核。
+创作者配置项保存在 MySQL 项目章节中；审核通过后冻结为发布快照。`locations.json` 是地点的唯一配置入口：地点名称、描述、`interactionMode`、`visibleWhen`、`enterWhen`、调查点和物品都在这里。没有独立的 `placements.json`。`visibleWhen` 首次满足后把地点 ID 加入存档的 `unlockedLocations`；`enterWhen` 每次进入前重新检查。前端用后端返回的 `enterable` 展示禁用状态，API 同样复核。
 
 NPC 的 `base.initialLocationId` 仅用于创建新游戏。当前位置以存档中的 `npcLocations[npcId]` 为准，`moveNpc` 规则效果可以改变它；地点是否对玩家解锁不限制 NPC 移动。NPC 只有在玩家当前地点才出现在可对话列表。地点的互动方式用于展示“线上／当面”，不代替 NPC 位置。
 
 NPC 的 `indicators.json` 定义数值、布尔、枚举、标签和文本指标；`personas.json` 的通用段及当前命中段形成当下人格；`rules.json` 定义语义或自动规则及确定性效果。可选的 `player/indicators.json` 和 `player/rules.json` 用同一套机制表示玩家运行时状态。规则效果可明确指定目标玩家或 NPC；找不到运行时目标时跳过该效果，导入校验会报告静态引用错误。没有内置的顺序阶段或阶段切换。
 
-存档保存玩家表单与指标、NPC 指标与位置、地点解锁、物品唯一归属和标签、聊天历史与摘要、事件完成记录、游戏日志等运行状态，并绑定剧本 ID、版本和内容哈希。剧本 JSON 不因游玩而改写；不同版本或哈希的旧档不迁移。结局和成就另存于 SQLite 的 `gallery` 表，读取旧手动档不会撤销已获得图鉴。
+存档保存玩家表单与指标、NPC 指标与位置、地点解锁、物品唯一归属和标签、聊天历史与摘要、事件完成记录、游戏日志等运行状态，并绑定剧本 ID、版本和内容哈希。审核通过时由系统分配版本并保留不可变发布快照；旧档按绑定的快照继续游玩，新游戏总使用最新版本，不做旧档迁移。结局和成就另存于 MySQL 的 `gallery` 表，读取旧手动档不会撤销已获得图鉴。
 
 ## AI 对话边界
 
@@ -29,4 +29,4 @@ NPC 的 `indicators.json` 定义数值、布尔、枚举、标签和文本指标
 
 ## 存档与后续扩展
 
-SQLite 的 `save_slots` 以 `owner_id + game_id + slot` 为主键：`slot=0` 是自动档，`1..5` 是手动档。读手动档覆盖当前自动档。当前仍是游客版本；账号、可视化创作、远程剧本发布和在线玩家 AI 分身尚未实现。
+MySQL 的 `save_slots` 以 `owner_id + game_id + slot` 为主键：`slot=0` 是自动档，`1..5` 是手动档。读手动档覆盖当前自动档。当前仍是游客版本；跨设备玩家账号与在线玩家 AI 分身尚未实现。

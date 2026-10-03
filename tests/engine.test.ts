@@ -39,6 +39,17 @@ const script = {
   ], storyEvents: [], endings: [], achievements: [],
 } as const;
 
+test('text comparisons treat date-shaped strings literally while date indicators validate calendars', () => {
+  const configured = structuredClone(loadScript('sword-and-screen'));
+  configured.storyIndicators = [
+    { id: 'literal', name: '文本', type: 'text', initial: '2026-02-30', playerVisible: false },
+    { id: 'date', name: '日期', type: 'date', initial: '2026-02-28', playerVisible: false },
+  ];
+  const state = createInitialState(configured, {});
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'literal', eq: '2026-02-30' } }, state, configured), true);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'date', gt: '2026-02-30' } }, state, configured), false);
+});
+
 test('new state uses script defaults and keeps NPC inventory private', () => {
   const state = createInitialState(script, { name: '阿宁' });
   assert.equal(state.locationId, 'station');
@@ -60,6 +71,14 @@ test('item view exposes the published image URL when configured', () => {
   assert.equal(view.items[0].image, image);
 });
 
+test('item runtime and player view expose ownership without item tags', () => {
+  const state = createInitialState(script, {});
+  state.itemStates.key.owner = 'player';
+  state.playerItems.key = 1;
+  assert.deepEqual(state.itemStates.key, { owner: 'player', discovered: false });
+  assert.equal(Object.hasOwn(makeView(script, state).items[0], 'tags'), false);
+});
+
 test('new NPC indicators initialize typed values and independent runtime visibility', () => {
   const configured = { ...script, npcs: [{ ...script.npcs[0], indicators: [
     { id: 'affection', name: '好感', type: 'number', initial: 2, min: 0, max: 100, playerVisible: true },
@@ -76,6 +95,60 @@ test('new NPC indicators initialize typed values and independent runtime visibil
   });
   state.npcIndicators!.ada.affection.playerVisible = false;
   assert.equal(configured.npcs[0].indicators[0].playerVisible, true);
+});
+
+test('story indicators initialize all six types without changing legacy stats', () => {
+  const configured = { ...script, storyIndicators: [
+    { id: 'score', name: '分数', type: 'number', initial: 2, min: 0, max: 100, playerVisible: false },
+    { id: 'phase', name: '阶段', type: 'enum', initial: 'start', options: ['start', 'end'], playerVisible: false },
+    { id: 'open', name: '开放', type: 'boolean', initial: false, playerVisible: false },
+    { id: 'once', name: '已执行规则', type: 'tags', initial: ['r1', 'r1'], playerVisible: false },
+    { id: 'memo', name: '备注', type: 'text', initial: '未开始', playerVisible: false },
+    { id: 'deadline', name: '日期', type: 'date', initial: '2026-10-02', playerVisible: false },
+  ] } as const;
+  const state = createInitialState(configured, {});
+  assert.deepEqual(Object.fromEntries(Object.entries(state.storyIndicators ?? {}).map(([id, value]) => [id, value.value])), {
+    score: 2, phase: 'start', open: false, once: ['r1'], memo: '未开始', deadline: '2026-10-02',
+  });
+  assert.equal(state.npcStats.ada.trust, 0);
+});
+
+test('typed indicator conditions distinguish strict numeric bounds and literal text', () => {
+  const configured = { ...script, storyIndicators: [
+    { id: 'score', name: '分数', type: 'number', initial: 5, min: 0, max: 10, playerVisible: false },
+    { id: 'memo', name: '备注', type: 'text', initial: 'Hello World', playerVisible: false },
+  ], playerIndicators: [{ id: 'trust', name: '信任', type: 'number', initial: 5, min: 0, max: 10, playerVisible: false }],
+    npcs: [{ ...script.npcs[0], indicators: [{ id: 'trust', name: '信任', type: 'number', initial: 5, min: 0, max: 10, playerVisible: false }] }, script.npcs[1]] } as const;
+  const state = createInitialState(configured, {});
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'score', gt: 5 } }, state), false);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'score', gte: 5 } }, state), true);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'score', lt: 5 } }, state), false);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'score', lte: 5 } }, state), true);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'score', ne: 5 } }, state), false);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'score', eq: 5 } }, state), true);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'score', ne: 'five' } }, state), false);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'memo', contains: 'World' } }, state), true);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'memo', notContains: 'world' } }, state), true);
+  assert.equal(evaluateCondition({ playerIndicator: { id: 'trust', gt: 4 } }, state), true);
+  assert.equal(evaluateCondition({ indicator: { npcId: 'ada', id: 'trust', lt: 6 } }, state), true);
+});
+
+test('typed conditions compare array length, opening fields, booleans and calendar days', () => {
+  const configured = { ...script, storyIndicators: [
+    { id: 'marks', name: '标记', type: 'tags', initial: ['a', 'b'], playerVisible: false },
+    { id: 'ready', name: '就绪', type: 'boolean', initial: false, playerVisible: false },
+    { id: 'day', name: '日期', type: 'date', initial: '2026-10-02', playerVisible: false },
+  ] } as const;
+  const state = createInitialState(configured, { choices: ['a', 'b'], birthday: '2026-10-01', name: '阿言' });
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'marks', has: 'a', length: { gte: 2 } } }, state), true);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'marks', length: { gt: 2 } } }, state), false);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'ready', eq: false } }, state), true);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'day', gt: '2026-10-01' } }, state), true);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'day', lt: '2026-02-30' } }, state), false);
+  assert.equal(evaluateCondition({ storyIndicator: { id: 'day', eq: '2026-02-30' } }, state), false);
+  assert.equal(evaluateCondition({ playerField: { id: 'choices', length: { eq: 2 } } }, state), true);
+  assert.equal(evaluateCondition({ playerField: { id: 'birthday', gte: '2026-10-01' } }, state), true);
+  assert.equal(evaluateCondition({ playerField: { id: 'name', contains: '言' } }, state), true);
 });
 
 test('new saves initialize an empty player activity timeline', () => {
@@ -195,14 +268,13 @@ test('indicator-derived placement is NPC-specific while a location stays unlocke
   assert.equal(makeView(game, state).npcs[0]?.channel, 'in-person');
 });
 
-test('tagged items and cross-NPC rules use canonical runtime state', () => {
+test('item ownership and cross-NPC rules use canonical runtime state', () => {
   const state = createInitialState(script, { name: '阿宁' });
   state.itemStates.key.owner = 'player';
-  state.itemStates.key.tags.push('染血');
   state.npcStats.eve.trust = 40;
   state.npcTags.eve.push('知情');
   const condition = { all: [
-    { hasItem: { owner: 'player', item: 'key', tags: ['染血'] } },
+    { hasItem: { owner: 'player', item: 'key' } },
     { stat: { npc: 'eve', id: 'trust', gte: 30 } },
     { npcTag: { npc: 'eve', tag: '知情' } },
   ] } as const;
@@ -233,6 +305,38 @@ test('hidden discovery and taking have separate gates', () => {
   state = searchLocation(game, state).state;
   assert.ok(makeView(game, state).location?.items.some((item) => item.id === 'practice-note'));
   assert.equal(state.itemStates['practice-note'].owner, 'location:her-home');
+});
+
+test('a location item with no conditions is found by search and can be taken', () => {
+  const game = { ...script, locations: [
+    { ...script.locations[0], items: [{ item: 'letter' }] }, script.locations[1],
+  ] } as const;
+  let state = createInitialState(game, { name: '阿宁' });
+  assert.deepEqual(makeView(game, state).location?.items, []);
+  state = searchLocation(game, state).state;
+  assert.deepEqual(makeView(game, state).location?.items.map(item => item.id), ['letter']);
+  assert.equal(makeView(game, state).location?.items[0].canTake, true);
+  const taken = takeLocationItem(game, state, 'letter');
+  assert.equal(taken.applied, true);
+  assert.equal(taken.state.itemStates.letter.owner, 'player');
+});
+
+test('discovery requires its condition at search time, then stays discovered while taking checks again', () => {
+  const game = { ...script, locations: [
+    { ...script.locations[0], items: [{ item: 'letter', discoverWhen: { flag: 'clue' }, takeWhen: { flag: 'permission' } }] },
+    script.locations[1],
+  ] } as const;
+  let state = createInitialState(game, { name: '阿宁' });
+  state = searchLocation(game, state).state;
+  assert.equal(makeView(game, state).location?.items.length, 0);
+  state.flags.push('clue');
+  state = searchLocation(game, state).state;
+  assert.deepEqual(makeView(game, state).location?.items.map(item => item.id), ['letter']);
+  state.flags = [];
+  assert.deepEqual(makeView(game, state).location?.items.map(item => item.id), ['letter']);
+  assert.equal(takeLocationItem(game, state, 'letter').applied, false);
+  state.flags.push('permission');
+  assert.equal(takeLocationItem(game, state, 'letter').applied, true);
 });
 
 test('exclusive events select stable priority and pre-turn gates ignore newly acquired items', () => {

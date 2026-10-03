@@ -67,7 +67,7 @@ test('story start and location interaction use the shared Ant Design select', ()
   const manifest = renderToStaticMarkup(createElement(ManifestEditor, { content: JSON.stringify({ title: '测试', periods: ['白天'], startLocation: 'home' }),
     onChange: () => {}, savedLocations: [{ id: 'home', name: '家' }] }));
   const locations = renderToStaticMarkup(createElement(LocationsEditor, { content: JSON.stringify([{ id: 'home', name: '家', interactionMode: 'in-person' }]),
-    onChange: () => {} }));
+    onChange: () => {}, sources: { storyEvents: [], items: [], npcs: [], locations: [], playerIndicators: [], periods: [], playerFields: [], rules: [] } }));
   assert.match(manifest, /ant-select/);
   assert.match(locations, /ant-select/);
   assert.doesNotMatch(manifest, /<select/);
