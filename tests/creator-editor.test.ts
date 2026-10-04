@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import SectionEditor from '../apps/web/src/creator/SectionEditor.js';
-import TabbedEntriesEditor from '../apps/web/src/creator/TabbedEntriesEditor.js';
-import { groupedSections, starterEntry } from '../apps/web/src/creator/sections.js';
-import { workspaceForPath, reviewStatusLabel } from '../apps/web/src/creator/review-ui.js';
-import { CreatorNavigation } from '../apps/web/src/creator/CreatorNavigation.js';
-import { ReviewDecision } from '../apps/web/src/creator/ReviewWorkspace.js';
-import { PlayerForm } from '../apps/web/src/App.js';
+import SectionEditor from '../apps/web/src/creator/editor/SectionEditor.js';
+import TabbedEntriesEditor from '../apps/web/src/creator/editor/TabbedEntriesEditor.js';
+import { groupedSections, starterEntry } from '../apps/web/src/creator/model/sections.js';
+import { workspaceForPath, reviewStatusLabel } from '../apps/web/src/creator/model/review-ui.js';
+import { CreatorNavigation } from '../apps/web/src/creator/app/CreatorNavigation.js';
+import { ReviewDecision } from '../apps/web/src/creator/workflows/ReviewWorkspace.js';
+import { PlayerForm } from '../apps/web/src/app/App.js';
 
 test('creator tabs group script, player and each NPC while editor exposes readable fields', () => {
   const sections = groupedSections(['manifest.json', 'story/indicators.json', 'player/indicators.json', 'npcs/one/base.json', 'npcs/two/base.json']);

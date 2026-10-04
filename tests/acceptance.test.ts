@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../apps/api/src/app.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import type { ChatAdapter } from '../apps/api/src/chat-service.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import type { ChatAdapter } from '../apps/api/src/modules/gameplay/chat-service.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
+import { withTestMysql } from './support/mysql-test-db.js';
 
 test('Su Nian progresses by semantic indicators through online chat, dinner, home, items, and ending', async () => {
+  await withTestMysql(async pool => {
   const adapter: ChatAdapter = {
     mode: 'demo',
     generate: async ({ text, candidates }) => ({ message: `苏念回应：${text}`,
@@ -22,12 +24,12 @@ test('Su Nian progresses by semantic indicators through online chat, dinner, hom
       }).map((candidate) => candidate.id) }),
     rewrite: async (_context, draft) => draft,
   };
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
-  const server = createApp(store, adapter, { creatorStore: accounts }).listen(0);
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
+  const server = createApp(store, adapter, { creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  let cookie = `gd_creator=${accounts.register('acceptance_player', 'player-password-1').token}`;
+  let cookie = `gd_creator=${(await accounts.register('acceptance_player', 'player-password-1')).token}`;
   let revision = 0;
   const request = async (path: string, body?: unknown) => {
     const response = await fetch(`${base}/api/games/sword-and-screen${path}`, {
@@ -92,6 +94,6 @@ test('Su Nian progresses by semantic indicators through online chat, dinner, hom
     assert.ok(data.view.chats['su-nian'].length > 20);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close(); accounts.close();
   }
+  });
 });

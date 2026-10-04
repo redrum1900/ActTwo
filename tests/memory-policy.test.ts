@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planCompression, selectMemory, validateMemory, compressMemory } from '../apps/api/src/memory-policy.js';
+import { planCompression, selectMemory, validateMemory, compressMemory } from '../apps/api/src/modules/gameplay/memory-policy.js';
 import { createInitialState } from '../packages/engine/src/index.js';
 import { loadScript } from '../packages/script/src/index.js';
-import { deriveChatContext } from '../apps/api/src/chat-service.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
+import { deriveChatContext } from '../apps/api/src/modules/gameplay/chat-service.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
 const script = loadScript('sword-and-screen');
 const messages = Array.from({ length: 30 }, (_, i) => ({ id: `m${i}`, role: i % 2 ? 'npc' as const : 'player' as const,
   text: `${i}:` + '内容'.repeat(150), at: '2026-01-01' }));

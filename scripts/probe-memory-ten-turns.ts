@@ -1,31 +1,31 @@
 import 'dotenv/config';
-import Database from 'better-sqlite3';
 import { writeFile, readFile } from 'node:fs/promises';
-import { createChatAdapter, createCombinedChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { createMemoryWorker } from '../apps/api/src/memory-worker.js';
-import { selectMemory } from '../apps/api/src/memory-policy.js';
-import { runChat } from '../apps/api/src/chat-service.js';
-import { loadScript } from '../packages/script/src/index.js';
-import { summarizeCosts } from '../apps/api/src/ai-cost.js';
+import { createChatAdapter, createCombinedChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { openTestMysql, resetTestMysqlData } from '../tests/support/mysql-test-db.js';
+import { loadProbeSource, probeArgument } from './probe-source.js';
+import { createMemoryWorker } from '../apps/api/src/modules/gameplay/memory-worker.js';
+import { selectMemory } from '../apps/api/src/modules/gameplay/memory-policy.js';
+import { runChat } from '../apps/api/src/modules/gameplay/chat-service.js';
+import { summarizeCosts } from '../apps/api/src/infrastructure/ai/ai-cost.js';
 import type { GameState } from '../packages/contracts/src/index.js';
 import { createInitialState } from '../packages/engine/src/index.js';
 
 if (!process.argv.includes('--live')) throw new Error('会执行10轮付费对话及必要摘要，确认后使用 --live');
 if (!process.env.AI_API_KEY) throw new Error('未配置AI密钥');
-const script = loadScript('sword-and-screen');
 const fresh = process.argv.includes('--fresh');
+if (!probeArgument('--game') || !fresh && !probeArgument('--owner'))
+  throw new Error('请提供 --game <故事 ID>；非 --fresh 模式还须提供 --owner <账号 ID>');
+const pool = await openTestMysql();
+let script;
 let source: GameState;
-if (fresh) {
-  source = createInitialState(script, { name: '阿言' });
-} else {
-const db = new Database('data/game.sqlite', { readonly: true });
-const row = db.prepare('SELECT state_json FROM save_slots WHERE game_id=? AND slot=0 ORDER BY updated_at DESC LIMIT 1')
-  .get('sword-and-screen') as { state_json: string } | undefined;
-db.close();
-if (!row) throw new Error('没有长存档');
-source = JSON.parse(row.state_json);
-}
+try {
+  await resetTestMysqlData(pool);
+  const snapshot = await loadProbeSource(!fresh);
+  script = snapshot.script;
+  source = fresh ? createInitialState(script, { name: '阿言' }) : snapshot.state!;
+} catch (error) { await pool.end(); throw error; }
+if (!script.npcs.some(npc => npc.id === 'su-nian')) { await pool.end(); throw new Error('该探针只支持包含 su-nian 的故事'); }
 const runId = `${fresh ? 'fresh' : 'memory'}-10-${Date.now()}`;
 const logPath = `data/${runId}.jsonl`;
 const reportPath = `data/${runId}-report.json`;
@@ -35,9 +35,7 @@ const adapter = (mode === 'combined' ? createCombinedChatAdapter : createChatAda
   apiKey: process.env.AI_API_KEY, baseUrl: process.env.AI_BASE_URL, model: process.env.AI_MODEL,
   logPath, temperatures: { generate: Number(process.env.AI_TEMPERATURE_GENERATE || 0.7), classify: utility, summarize: utility, rewrite: utility },
 });
-const savePath = fresh ? `data/${runId}.sqlite` : ':memory:';
-const store = createSaveStore(savePath);
-store.putAuto(runId, script.id, source);
+const store = createMysqlSaveStore(pool);
 const worker = createMemoryWorker(store, adapter);
 const prompts = [
   '这里是哪里？',
@@ -61,12 +59,13 @@ function metrics(state: GameState) {
     affection: state.npcIndicators?.['su-nian'].affection.value, location: state.locationId, npcLocation: state.npcLocations?.['su-nian'],
     memoryStatus: state.memoryCompression?.['su-nian'] };
 }
-const initial = metrics(source);
-console.log(JSON.stringify({ runId, model: process.env.AI_MODEL, mode, initial, reportPath, logPath, savePath }));
 try {
+  await store.putAuto(runId, script.id, source);
+  const initial = metrics(source);
+  console.log(JSON.stringify({ runId, model: process.env.AI_MODEL, mode, initial, reportPath, logPath, storage: 'guarded MySQL test database' }));
   for (let index = 0; index < prompts.length; index++) {
     const turnId = `${runId}-${index + 1}`;
-    const saved = store.getAuto(runId, script.id)!;
+    const saved = (await store.getAuto(runId, script.id))!;
     const before = metrics(saved.state);
     const started = Date.now();
     let output: any;
@@ -76,9 +75,9 @@ try {
         turnId, onDraft: () => { firstDraftMs ??= Date.now() - started; },
       });
       const replyMs = Date.now() - started;
-      const updated = store.updateAutoWithGallery(runId, script.id, saved.revision, result.state);
+      const updated = await store.updateAutoWithGallery(runId, script.id, saved.revision, result.state);
       await worker(runId, script, updated, 'su-nian');
-      const after = store.getAuto(runId, script.id)!;
+      const after = (await store.getAuto(runId, script.id))!;
       output = { round: index + 1, turnId, playerMessage: prompts[index], success: true, firstDraftMs, replyMs,
         totalWithMemoryMs: Date.now() - started, reply: result.reply, appliedEvents: result.appliedEvents,
         diagnostics: result.state.ruleDiagnostics?.at(-1), before, after: metrics(after.state),
@@ -86,11 +85,11 @@ try {
     } catch (error) {
       output = { round: index + 1, turnId, playerMessage: prompts[index], success: false,
         error: error instanceof Error ? error.message : String(error), totalWithMemoryMs: Date.now() - started,
-        before, after: metrics(store.getAuto(runId, script.id)!.state) };
+        before, after: metrics((await store.getAuto(runId, script.id))!.state) };
     }
     results.push(output);
     await writeFile(reportPath, JSON.stringify({ runId, model: process.env.AI_MODEL, mode, initial,
-      savePath, note: fresh ? '从初始状态创建独立测试存档，不读写正式存档；费用按此前截图单价估算。' : '只读真实数据库，全部游戏更新写入内存数据库；每轮等待后台摘要后再继续。费用按此前截图单价估算。', results }, null, 2), { mode: 0o600 });
+      storage: 'guarded MySQL test database', note: fresh ? '从初始状态创建独立测试存档，不读写正式存档；费用按此前截图单价估算。' : '只读正式存档，全部游戏更新写入独立 MySQL 测试库；每轮等待后台摘要后再继续。费用按此前截图单价估算。', results }, null, 2), { mode: 0o600 });
     console.log(JSON.stringify({ round: output.round, success: output.success, reply: output.reply,
       error: output.error, appliedEvents: output.appliedEvents, after: output.after }));
   }
@@ -106,4 +105,4 @@ try {
     }])) };
   await writeFile(reportPath, JSON.stringify({ ...report, costs, costSummary }, null, 2), { mode: 0o600 });
   console.log(JSON.stringify({ reportPath, costs, costSummary }));
-} finally { store.close(); }
+} finally { await pool.end(); }

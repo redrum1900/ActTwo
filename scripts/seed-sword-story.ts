@@ -1,9 +1,9 @@
 import 'dotenv/config';
 import type { RowDataPacket } from 'mysql2/promise';
 import { inspectScriptParts, scriptPartsFromScript } from '@game/script/parts';
-import { createMysqlPool } from '../apps/api/src/db/mysql.js';
-import { migrateMysql } from '../apps/api/src/db/migrations.js';
-import { createMysqlProjectStore } from '../apps/api/src/db/mysql-project-store.js';
+import { createMysqlPool } from '../apps/api/src/infrastructure/mysql/mysql.js';
+import { migrateMysql } from '../apps/api/src/infrastructure/mysql/migrations.js';
+import { createMysqlProjectStore } from '../apps/api/src/infrastructure/mysql/mysql-project-store.js';
 import { swordStoryV2 } from './sword-story-v2.js';
 
 const report = inspectScriptParts(scriptPartsFromScript(swordStoryV2, swordStoryV2.id, swordStoryV2.title));

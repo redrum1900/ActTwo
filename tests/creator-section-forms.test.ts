@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import SectionEditor from '../apps/web/src/creator/SectionEditor.js';
+import SectionEditor from '../apps/web/src/creator/editor/SectionEditor.js';
 import { patchManifest, patchLocation, newLocationId, changePeriod, movePeriod, removePeriod,
-  newStoryEvent, patchStoryEvent, removeStoryEvent } from '../apps/web/src/creator/section-forms.js';
-import { setStoryEventGate, setRecordedStoryEvents } from '../apps/web/src/creator/story-event-rule.js';
-import { referencedStoryEventIds } from '../apps/web/src/creator/story-event-references.js';
-import { newEntryId, patchEntryById, addEntry, removeEntry } from '../apps/web/src/creator/section-forms.js';
-import * as locationForms from '../apps/web/src/creator/section-forms.js';
+  newStoryEvent, patchStoryEvent, removeStoryEvent } from '../apps/web/src/creator/model/section-forms.js';
+import { setStoryEventGate, setRecordedStoryEvents } from '../apps/web/src/creator/model/story-event-rule.js';
+import { referencedStoryEventIds } from '../apps/web/src/creator/model/story-event-references.js';
+import { newEntryId, patchEntryById, addEntry, removeEntry } from '../apps/web/src/creator/model/section-forms.js';
+import * as locationForms from '../apps/web/src/creator/model/section-forms.js';
 
 test('NPC basic form patches preserve hidden fields and item visibility states', () => {
   const forms = locationForms as typeof locationForms & {

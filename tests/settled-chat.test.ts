@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { runChat } from '../apps/api/src/chat-service.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { runChat } from '../apps/api/src/modules/gameplay/chat-service.js';
 import { createInitialState } from '../packages/engine/src/index.js';
 import { loadScript } from '../packages/script/src/index.js';
 

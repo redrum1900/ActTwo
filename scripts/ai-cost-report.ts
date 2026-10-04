@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { readFile } from 'node:fs/promises';
-import { summarizeCosts } from '../apps/api/src/ai-cost.js';
+import { summarizeCosts } from '../apps/api/src/infrastructure/ai/ai-cost.js';
 
 const number = (name: string, fallback: number) => {
   const value = Number(process.env[name] ?? fallback);

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Pool } from 'mysql2/promise';
-import { migrateMysql } from '../apps/api/src/db/migrations.js';
-import { createMysqlAiAuditStore } from '../apps/api/src/db/mysql-ai-audit-store.js';
+import { migrateMysql } from '../apps/api/src/infrastructure/mysql/migrations.js';
+import { createMysqlAiAuditStore } from '../apps/api/src/infrastructure/mysql/mysql-ai-audit-store.js';
 
 test('AI call details include the current story name alongside the story ID', async () => {
   const audit = createMysqlAiAuditStore({ execute: async () => [[{
@@ -16,7 +16,7 @@ test('AI call details include the current story name alongside the story ID', as
 });
 
 test('AI audit keeps unknown cache usage null and never stores prompts', async () => {
-  const { aiCallRecord } = await import('../apps/api/src/ai-audit.js');
+  const { aiCallRecord } = await import('../apps/api/src/infrastructure/ai/ai-audit.js');
   const row = aiCallRecord({ accountId: 'A', source: 'formal', storyId: 'story', operationId: 'turn',
     purpose: 'reply', model: 'model', providerIndex: 0, startedAt: '2026-10-03T00:00:00.000Z', durationMs: 10,
     httpStatus: 200, outcome: 'success', inputTokens: 7, outputTokens: 9 });
@@ -38,7 +38,7 @@ test('AI audit writes one detail and one durable monthly total, scoped by accoun
   const connection = { beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {}, execute };
   const pool = { getConnection: async () => connection, execute } as unknown as Pool;
   const audit = createMysqlAiAuditStore(pool);
-  const { aiCallRecord } = await import('../apps/api/src/ai-audit.js');
+  const { aiCallRecord } = await import('../apps/api/src/infrastructure/ai/ai-audit.js');
   await audit.record(aiCallRecord({ accountId: 'A', source: 'formal', storyId: 'story', operationId: 'turn', purpose: 'reply',
     model: 'model', providerIndex: 0, startedAt: '2026-10-03T00:00:00.000Z', durationMs: 10, httpStatus: 200,
     outcome: 'success', inputTokens: 7, outputTokens: 9 }));

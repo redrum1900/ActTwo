@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summarizeCosts } from '../apps/api/src/ai-cost.js';
+import { summarizeCosts } from '../apps/api/src/infrastructure/ai/ai-cost.js';
 
 test('turn costs include every call and retries, and unknown usage is not counted as free', () => {
   const rows = [

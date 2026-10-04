@@ -1,10 +1,10 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.js';
-import CreatorApp from './creator/CreatorApp.js';
-import AccountGate from './AccountGate.js';
-import AiUsagePage from './AiUsagePage.js';
-import { usePlayerRoute } from './player-navigation.js';
+import App from './app/App.js';
+import CreatorApp from './creator/app/CreatorApp.js';
+import AccountGate from './app/AccountGate.js';
+import AiUsagePage from './usage/AiUsagePage.js';
+import { usePlayerRoute } from './app/player-navigation.js';
 import './styles.css';
 
 export function PlayerEntry() {

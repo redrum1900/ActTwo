@@ -54,7 +54,7 @@ test('story identity stays above a separately scrolling sidebar menu', () => {
   assert.equal(nav.get('overflow-y'), 'auto');
   assert.equal(nav.get('min-height'), '0');
   assert.equal(mobileDeclarations('.creator-sidebar').get('overflow-y'), 'auto');
-  const component = readFileSync(fileURLToPath(new URL('../apps/web/src/creator/CreatorApp.tsx', import.meta.url)), 'utf8');
+  const component = readFileSync(fileURLToPath(new URL('../apps/web/src/creator/app/CreatorApp.tsx', import.meta.url)), 'utf8');
   assert.match(component, /className="creator-sidebar-intro"/);
 });
 

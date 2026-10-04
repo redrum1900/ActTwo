@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { extractImportText } from '../apps/api/src/creator/import-extract.js';
+import { extractImportText } from '../apps/api/src/modules/creator/import/import-extract.js';
 
 async function withSource(name: string, bytes: Buffer, run: (file: string) => Promise<void>) {
   const directory = await mkdtemp(path.join(tmpdir(), 'game-import-test-'));

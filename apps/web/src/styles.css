@@ -44,7 +44,7 @@ p { line-height: 1.8; text-wrap: pretty; }
 .site-header, .subpage-header, .game-header { position: sticky; top: 0; z-index: 30; }
 .site-header { height: 92px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: var(--paper); }
 .subpage-header { height: 92px; display: flex; align-items: center; border-bottom: 1px solid var(--line); background: var(--paper); }
-.brand-mark { font-family: 'Songti SC', 'Noto Serif CJK SC', serif; color: var(--ink); font-weight: 700; font-size: 23px; letter-spacing: .1em; }
+.brand-mark { font-family: 'DM Sans', sans-serif; color: var(--ink); font-weight: 700; font-size: 23px; letter-spacing: .1em; }
 .brand-mark span { color: var(--accent); }
 .brand-mark small { display: block; margin-top: 2px; font: 600 9px 'DM Sans', sans-serif; letter-spacing: .26em; color: var(--muted); }
 .header-note { font-size: 12px; color: var(--muted); letter-spacing: .15em; }
@@ -172,7 +172,7 @@ p { line-height: 1.8; text-wrap: pretty; }
 .game-frame.chat-layout { height: 100dvh; min-height: 0; overflow: hidden; }
 .game-header { height: 78px; flex: none; display: flex; justify-content: space-between; align-items: center; gap: 18px; background: var(--deep); color: #f3f1e9; padding: 0 clamp(24px, 4vw, 68px); }
 .game-header-left { display: flex; align-items: center; gap: 25px; min-width: 0; }
-.header-brand { flex: none; padding: 0; border: 0; background: none; color: #f3f1e9; font: 600 18px 'Songti SC', serif; white-space: nowrap; }
+.header-brand { flex: none; padding: 0; border: 0; background: none; color: #f3f1e9; font: 700 18px 'DM Sans', sans-serif; letter-spacing: .06em; white-space: nowrap; }
 .header-brand span { font: 12px 'DM Sans', 'PingFang SC', sans-serif; color: #a9b7b8; }
 .status-separator { width: 1px; height: 29px; background: rgba(255,255,255,.16); }
 .status-block { display: flex; flex-direction: column; gap: 3px; white-space: nowrap; }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeRuleEffect, retargetRuleEffect } from '../apps/web/src/creator/rule-effects.js';
-import type { ConditionSources } from '../apps/web/src/creator/condition-tree.js';
+import { makeRuleEffect, retargetRuleEffect } from '../apps/web/src/creator/model/rule-effects.js';
+import type { ConditionSources } from '../apps/web/src/creator/model/condition-tree.js';
 import type { Effect } from '@game/contracts';
 
 const sources: ConditionSources = {

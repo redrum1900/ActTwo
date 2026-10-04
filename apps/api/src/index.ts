@@ -4,17 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
 import express from 'express';
 import { createApp } from './app.js';
-import { createChatAdapter, createCombinedChatAdapter } from './ai-adapter.js';
-import { createMysqlPool } from './db/mysql.js';
-import { migrateMysql } from './db/migrations.js';
-import { createMysqlSaveStore } from './db/mysql-save-store.js';
-import { createMysqlCreatorStore } from './db/mysql-auth-store.js';
-import { createMysqlProjectStore } from './db/mysql-project-store.js';
-import { createMysqlReviewStore } from './db/mysql-review-store.js';
-import { createMysqlCreatorImportStore } from './db/mysql-creator-import.js';
-import { readAiFallbacks } from './ai-config.js';
-import { createMysqlAiAuditStore } from './db/mysql-ai-audit-store.js';
-import { createMysqlPlaytestStore } from './db/mysql-playtest-store.js';
+import { createChatAdapter, createCombinedChatAdapter } from './infrastructure/ai/ai-adapter.js';
+import { createMysqlPool } from './infrastructure/mysql/mysql.js';
+import { migrateMysql } from './infrastructure/mysql/migrations.js';
+import { createMysqlSaveStore } from './infrastructure/mysql/mysql-save-store.js';
+import { createMysqlCreatorStore } from './infrastructure/mysql/mysql-auth-store.js';
+import { createMysqlProjectStore } from './infrastructure/mysql/mysql-project-store.js';
+import { createMysqlReviewStore } from './infrastructure/mysql/mysql-review-store.js';
+import { createMysqlCreatorImportStore } from './infrastructure/mysql/mysql-creator-import.js';
+import { readAiFallbacks } from './infrastructure/ai/ai-config.js';
+import { createMysqlAiAuditStore } from './infrastructure/mysql/mysql-ai-audit-store.js';
+import { createMysqlPlaytestStore } from './infrastructure/mysql/mysql-playtest-store.js';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 config({ path: path.join(projectRoot, '.env') });
@@ -67,4 +67,4 @@ if (process.env.NODE_ENV === 'production') {
 }
 const port = Number(process.env.PORT || 3001);
 const host = process.env.GAME_API_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
-app.listen(port, host, () => console.log(`Game DD API listening on http://${host}:${port} (${adapter.mode})`));
+app.listen(port, host, () => console.log(`ACT II API listening on http://${host}:${port} (${adapter.mode})`));

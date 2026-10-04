@@ -6,13 +6,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { loadScript } from '@game/script';
-import { createMysqlPool } from '../apps/api/src/db/mysql.js';
-import { createMysqlCreatorStore } from '../apps/api/src/db/mysql-auth-store.js';
-import { createMysqlProjectStore } from '../apps/api/src/db/mysql-project-store.js';
+import { createMysqlPool } from '../apps/api/src/infrastructure/mysql/mysql.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
+import { createMysqlProjectStore } from '../apps/api/src/infrastructure/mysql/mysql-project-store.js';
 
 test('MySQL review publishes only the approved frozen snapshot',
   { skip: process.env.MYSQL_REMOTE_SMOKE !== '1' }, async () => {
-    const { createMysqlReviewStore } = await import('../apps/api/src/db/mysql-review-store.js');
+    const { createMysqlReviewStore } = await import('../apps/api/src/infrastructure/mysql/mysql-review-store.js');
     const pool = createMysqlPool(process.env);
     const accounts = createMysqlCreatorStore(pool);
     const projects = createMysqlProjectStore(pool);
@@ -46,7 +46,7 @@ test('MySQL review publishes only the approved frozen snapshot',
 
 test('MySQL media metadata serves only images linked to a published project',
   { skip: process.env.MYSQL_REMOTE_SMOKE !== '1' }, async () => {
-    const { createMysqlCoverAssets } = await import('../apps/api/src/db/mysql-cover-assets.js');
+    const { createMysqlCoverAssets } = await import('../apps/api/src/infrastructure/mysql/mysql-cover-assets.js');
     const pool = createMysqlPool(process.env);
     const accounts = createMysqlCreatorStore(pool);
     const projects = createMysqlProjectStore(pool);

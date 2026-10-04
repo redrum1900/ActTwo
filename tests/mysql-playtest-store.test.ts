@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Pool } from 'mysql2/promise';
-import { migrateMysql } from '../apps/api/src/db/migrations.js';
-import { createMysqlPlaytestStore } from '../apps/api/src/db/mysql-playtest-store.js';
+import { migrateMysql } from '../apps/api/src/infrastructure/mysql/migrations.js';
+import { createMysqlPlaytestStore } from '../apps/api/src/infrastructure/mysql/mysql-playtest-store.js';
 import { swordStoryV2 } from '../scripts/sword-story-v2.js';
 
 test('migration creates one-row playtest snapshots for fresh and version-five schemas', async () => {

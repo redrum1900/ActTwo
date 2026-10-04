@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ImportStorySource } from '../apps/web/src/creator/ImportStoryModal.js';
+import { ImportStorySource } from '../apps/web/src/creator/workflows/ImportStoryModal.js';
 
 test('import dialog offers supported files, pasted text, and no byte-size cap copy', () => {
   const html = renderToStaticMarkup(createElement(ImportStorySource, {

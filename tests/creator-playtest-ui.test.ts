@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { playtestDeepLink, playtestPath } from '../apps/web/src/playtest-client.js';
-import PlaytestDrawer, { startPlaytestInNewTab } from '../apps/web/src/creator/PlaytestDrawer.js';
+import { playtestDeepLink, playtestPath } from '../apps/web/src/gameplay/playtest-client.js';
+import PlaytestDrawer, { startPlaytestInNewTab } from '../apps/web/src/creator/workflows/PlaytestDrawer.js';
 
 test('playtest deep link identifies its own immutable run', () => {
   assert.deepEqual(playtestDeepLink('/playtest/story/pt-1'), { projectId: 'story', playtestId: 'pt-1' });

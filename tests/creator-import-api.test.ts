@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createImportWorker } from '../apps/api/src/creator/import-worker.js';
+import { createImportWorker } from '../apps/api/src/modules/creator/import/import-worker.js';
 import { swordStoryV2 } from '../scripts/sword-story-v2.js';
 import express from 'express';
-import { createImportRouter } from '../apps/api/src/creator/import-router.js';
-import type { MysqlCreatorImportStore } from '../apps/api/src/db/mysql-creator-import.js';
-import type { CreatorStore } from '../apps/api/src/creator/auth-store.js';
+import { createImportRouter } from '../apps/api/src/modules/creator/import/import-router.js';
+import type { MysqlCreatorImportStore } from '../apps/api/src/infrastructure/mysql/mysql-creator-import.js';
+import type { MysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
 
 test('background import generates once without applying the draft', async () => {
   const calls: string[] = [];
@@ -49,7 +49,7 @@ test('upload is authenticated and accepts a streamed body beyond the JSON limit'
   } as unknown as MysqlCreatorImportStore;
   const accounts = { accountFor: async (token?: string) => token
     ? { id: 'owner', username: token.startsWith('a') ? 'superadmin' : 'other-admin',
-      role: token.startsWith('b') ? 'author' : 'admin' } : null } as unknown as CreatorStore;
+      role: token.startsWith('b') ? 'author' : 'admin' } : null } as unknown as MysqlCreatorStore;
   const app = express();
   app.use(express.json({ limit: '2mb' }));
   app.use('/api/creator', createImportRouter(accounts, jobs, () => ({

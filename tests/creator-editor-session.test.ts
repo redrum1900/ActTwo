@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasUnsavedChanges, resolveDirtyChoice, settleSavedDraft } from '../apps/web/src/creator/editor-session.js';
+import { hasUnsavedChanges, resolveDirtyChoice, settleSavedDraft } from '../apps/web/src/creator/session/editor-session.js';
 
 test('a section is dirty only while its draft differs from the last saved content', () => {
   assert.equal(hasUnsavedChanges('{"title":"甲"}', '{"title":"甲"}'), false);

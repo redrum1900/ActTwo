@@ -1,0 +1,21 @@
+# 示例假设项目位于 /srv/act-ii，npm 位于 /usr/bin/npm。
+# 安装前先核对服务器的实际路径，且不要同时用宝塔 Node 项目管理器启动第二份实例。
+[Unit]
+Description=ACT II web and API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=actii
+Group=actii
+WorkingDirectory=/srv/act-ii
+Environment=NODE_ENV=production
+Environment=GAME_API_HOST=127.0.0.1
+Environment=PORT=3001
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

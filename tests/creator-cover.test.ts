@@ -4,25 +4,22 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../apps/api/src/app.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
-import { createProjectStore } from '../apps/api/src/creator/project-store.js';
-import { createReviewStore } from '../apps/api/src/creator/review-store.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { withCreatorMysql } from './support/creator-mysql.js';
 
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlW37YAAAAASUVORK5CYII=', 'base64');
 
 test('cover upload is owned, format checked, and public only after publication', async () => {
   const coversDir = mkdtempSync(path.join(tmpdir(), 'game-dd-covers-'));
-  const accounts = createCreatorStore(':memory:');
-  const projects = createProjectStore(accounts.db);
-  const reviews = createReviewStore(accounts.db, projects);
-  const saves = createSaveStore(':memory:');
-  const author = accounts.register('coverauthor', 'author-password-1');
-  const other = accounts.register('coverother', 'other-password-1');
-  const admin = accounts.createAdmin('coveradmin', 'admin-password-1');
-  const project = projects.create(author.account.id, 'cover-story', '封面故事');
-  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects, reviewStore: reviews, coversDir }).listen(0);
+  try { await withCreatorMysql(async ({ pool, accounts, projects, reviews }) => {
+  const saves = createMysqlSaveStore(pool);
+  const author = await accounts.register('coverauthor', 'author-password-1');
+  const other = await accounts.register('coverother', 'other-password-1');
+  const admin = await accounts.createAdmin('coveradmin', 'admin-password-1');
+  const project = await projects.create(author.account.id, 'cover-story', '封面故事');
+  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects,
+    reviewStore: reviews, mysqlPool: pool, coversDir }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const login = async (username: string, password: string) => {
@@ -51,28 +48,28 @@ test('cover upload is owned, format checked, and public only after publication',
     assert.equal(preview.status, 200);
     assert.equal(preview.headers.get('content-type'), 'image/png');
     const manifest = JSON.parse(project.sections['manifest.json'].content);
-    projects.putSection(author.account.id, project.id, 'manifest.json', JSON.stringify({ ...manifest, cover }), 1);
-    const review = reviews.submit(author.account.id, project.id);
-    reviews.approve(admin.id, review.id);
+    await projects.putSection(author.account.id, project.id, 'manifest.json', JSON.stringify({ ...manifest, cover }), 1);
+    const review = await reviews.submit(author.account.id, project.id);
+    await reviews.approve(admin.id, review.id);
     const publicImage = await fetch(`${base}${cover}`);
     assert.equal(publicImage.status, 200);
     assert.deepEqual(Buffer.from(await publicImage.arrayBuffer()), tinyPng);
     assert.equal((await upload(authorCookie, Buffer.alloc(5 * 1024 * 1024 + 1))).status, 413);
-  } finally { server.close(); accounts.close(); saves.close(); rmSync(coversDir, { recursive: true, force: true }); }
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  }); } finally { rmSync(coversDir, { recursive: true, force: true }); }
 });
 
 test('item image stays private until approved and cannot be referenced across projects', async () => {
   const coversDir = mkdtempSync(path.join(tmpdir(), 'game-dd-item-images-'));
-  const accounts = createCreatorStore(':memory:');
-  const projects = createProjectStore(accounts.db);
-  const reviews = createReviewStore(accounts.db, projects);
-  const saves = createSaveStore(':memory:');
-  const author = accounts.register('itemauthor', 'author-password-1');
-  const other = accounts.register('itemother', 'other-password-1');
-  const admin = accounts.createAdmin('itemadmin', 'admin-password-1');
-  const project = projects.create(author.account.id, 'item-story', '道具故事');
-  const otherProject = projects.create(other.account.id, 'other-item-story', '别人的故事');
-  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects, reviewStore: reviews, coversDir }).listen(0);
+  try { await withCreatorMysql(async ({ pool, accounts, projects, reviews }) => {
+  const saves = createMysqlSaveStore(pool);
+  const author = await accounts.register('itemauthor', 'author-password-1');
+  const other = await accounts.register('itemother', 'other-password-1');
+  const admin = await accounts.createAdmin('itemadmin', 'admin-password-1');
+  const project = await projects.create(author.account.id, 'item-story', '道具故事');
+  const otherProject = await projects.create(other.account.id, 'other-item-story', '别人的故事');
+  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects,
+    reviewStore: reviews, mysqlPool: pool, coversDir }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const login = async (username: string, password: string) => {
@@ -98,16 +95,17 @@ test('item image stays private until approved and cannot be referenced across pr
     assert.equal((await fetch(`${base}/api/creator/projects/${project.id}/item-images/${id}`, { headers: { Cookie: otherCookie } })).status, 404);
     assert.equal((await fetch(`${base}/api/creator/projects/${project.id}/item-images/${id}`, { headers: { Cookie: cookie } })).status, 200);
     const otherItems = otherProject.sections['items.json'];
-    projects.putSection(other.account.id, otherProject.id, 'items.json', JSON.stringify([{ id: 'stolen', name: '偷来的图', image }]), otherItems.revision);
-    assert.ok(projects.validate(other.account.id, otherProject.id).errors.some(issue => issue.message.includes('图片')));
+    await projects.putSection(other.account.id, otherProject.id, 'items.json', JSON.stringify([{ id: 'stolen', name: '偷来的图', image }]), otherItems.revision);
+    assert.ok((await projects.validate(other.account.id, otherProject.id)).errors.some(issue => issue.message.includes('图片')));
     const items = project.sections['items.json'];
-    projects.putSection(author.account.id, project.id, 'items.json', JSON.stringify([{ id: 'photo', name: '照片', description: '', image }]), items.revision);
+    await projects.putSection(author.account.id, project.id, 'items.json', JSON.stringify([{ id: 'photo', name: '照片', description: '', image }]), items.revision);
     assert.equal((await fetch(`${base}/api/creator/projects/${project.id}/item-images/${id}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 409);
-    const review = reviews.submit(author.account.id, project.id);
-    reviews.approve(admin.id, review.id);
+    const review = await reviews.submit(author.account.id, project.id);
+    await reviews.approve(admin.id, review.id);
     const publicImage = await fetch(`${base}${image}`);
     assert.equal(publicImage.status, 200);
     assert.deepEqual(Buffer.from(await publicImage.arrayBuffer()), tinyPng);
     assert.equal((await fetch(`${base}/api/creator/projects/${project.id}/item-images/${id}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 409);
-  } finally { server.close(); accounts.close(); saves.close(); rmSync(coversDir, { recursive: true, force: true }); }
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  }); } finally { rmSync(coversDir, { recursive: true, force: true }); }
 });

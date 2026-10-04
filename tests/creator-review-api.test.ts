@@ -1,19 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../apps/api/src/app.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
-import { createProjectStore } from '../apps/api/src/creator/project-store.js';
-import { createReviewStore } from '../apps/api/src/creator/review-store.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { withCreatorMysql } from './support/creator-mysql.js';
 
 test('only admin approves submitted snapshot; old release survives pending and rejection', async () => {
-  const accounts = createCreatorStore(':memory:');
-  const projects = createProjectStore(accounts.db);
-  const reviews = createReviewStore(accounts.db, projects);
-  const saves = createSaveStore(':memory:');
-  accounts.createAdmin('superadmin', 'admin-password-1');
-  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects, reviewStore: reviews }).listen(0);
+  await withCreatorMysql(async ({ pool, accounts, projects, reviews }) => {
+  const saves = createMysqlSaveStore(pool);
+  await accounts.createAdmin('superadmin', 'admin-password-1');
+  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects,
+    reviewStore: reviews, mysqlPool: pool }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const call = async (path: string, method = 'GET', body?: unknown, cookie = '') => {
@@ -64,5 +61,6 @@ test('only admin approves submitted snapshot; old release survives pending and r
     assert.equal((await call(story, 'GET', undefined, authorCookie)).data.review.rejectionReason, '需要完善说明');
     const other = await call('/creator/register', 'POST', { username: 'other', password: 'other-password-1' });
     assert.equal((await call(story, 'GET', undefined, other.cookie)).status, 404);
-  } finally { server.close(); accounts.close(); saves.close(); }
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
-import AiUsagePage from '../apps/web/src/AiUsagePage.js';
+import AiUsagePage from '../apps/web/src/usage/AiUsagePage.js';
 
 test('usage page distinguishes account/admin and explains unknown usage without prices', () => {
   const own = renderToStaticMarkup(React.createElement(AiUsagePage));

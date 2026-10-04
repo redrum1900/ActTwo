@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPlayerNavigation } from '../apps/web/src/player-navigation.js';
+import { createPlayerNavigation } from '../apps/web/src/app/player-navigation.js';
 
 function browser(pathname: string) {
   const location = { pathname };

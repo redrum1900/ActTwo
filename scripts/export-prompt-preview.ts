@@ -1,18 +1,13 @@
 import 'dotenv/config';
-import Database from 'better-sqlite3';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { createChatAdapter, createCombinedChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { runChat } from '../apps/api/src/chat-service.js';
-import { loadScript } from '../packages/script/src/index.js';
-import type { GameState } from '../packages/contracts/src/index.js';
+import { createChatAdapter, createCombinedChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { runChat } from '../apps/api/src/modules/gameplay/chat-service.js';
+import { loadProbeSource, probeArgument } from './probe-source.js';
 
-const db = new Database('data/game.sqlite', { readonly: true });
-const row = db.prepare('SELECT state_json FROM save_slots WHERE game_id=? AND slot=0 ORDER BY updated_at DESC LIMIT 1')
-  .get('sword-and-screen') as { state_json: string } | undefined;
-db.close();
-if (!row) throw new Error('没有可预览的存档');
-const state: GameState = JSON.parse(row.state_json);
-const text = process.argv[2] || '这里是哪里？';
+const { script, state } = await loadProbeSource(true);
+if (!state) throw new Error('没有可预览的存档');
+if (!script.npcs.some(npc => npc.id === 'su-nian')) throw new Error('该探针只支持包含 su-nian 的故事');
+const text = probeArgument('--text') || '这里是哪里？';
 const mode = process.env.AI_CHAT_MODE || 'settled';
 const requests: { model: string; messages: { role: string; content: string }[]; [key: string]: unknown }[] = [];
 const original = globalThis.fetch;
@@ -28,7 +23,7 @@ try {
   const adapter = factory({ apiKey: 'offline-placeholder', model: process.env.AI_MODEL || 'Cot-18',
     temperatures: { generate: Number(process.env.AI_TEMPERATURE_GENERATE || 0.7),
       classify: Number(process.env.AI_TEMPERATURE_UTILITY || 0.2) } });
-  await runChat(loadScript('sword-and-screen'), state, 'su-nian', text, adapter);
+  await runChat(script, state, 'su-nian', text, adapter);
 } finally { globalThis.fetch = original; }
 const note = '当前存档的离线重建，不是历史请求抓包。玩家本轮发言为预览输入；规则判断模拟为空，因此回复请求展示无事件结算的状态。未调用AI、未修改存档、不含密钥。下方消息正文完整保留。';
 await mkdir('data/prompt-preview', { recursive: true });

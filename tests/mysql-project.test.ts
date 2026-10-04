@@ -2,12 +2,12 @@ import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { createMysqlPool } from '../apps/api/src/db/mysql.js';
-import { createMysqlCreatorStore } from '../apps/api/src/db/mysql-auth-store.js';
+import { createMysqlPool } from '../apps/api/src/infrastructure/mysql/mysql.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
 
 test('MySQL project preserves sections, ownership, and optimistic revision',
   { skip: process.env.MYSQL_REMOTE_SMOKE !== '1' }, async () => {
-    const { createMysqlProjectStore } = await import('../apps/api/src/db/mysql-project-store.js');
+    const { createMysqlProjectStore } = await import('../apps/api/src/infrastructure/mysql/mysql-project-store.js');
     const pool = createMysqlPool(process.env);
     const accounts = createMysqlCreatorStore(pool);
     const projects = createMysqlProjectStore(pool);

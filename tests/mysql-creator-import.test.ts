@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { swordStoryV2 } from '../scripts/sword-story-v2.js';
 import { scriptPartsFromScript } from '@game/script/parts';
-import { createMysqlCreatorImportStore } from '../apps/api/src/db/mysql-creator-import.js';
+import { createMysqlCreatorImportStore } from '../apps/api/src/infrastructure/mysql/mysql-creator-import.js';
 import type { Pool } from 'mysql2/promise';
-import { migrateMysql } from '../apps/api/src/db/migrations.js';
+import { migrateMysql } from '../apps/api/src/infrastructure/mysql/migrations.js';
 
 test('import apply keeps project identity and rejects a changed draft before deletion', async () => {
   const statements: string[] = [];

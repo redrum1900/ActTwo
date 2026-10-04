@@ -2,11 +2,11 @@ import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { randomUUID, scryptSync } from 'node:crypto';
 import test from 'node:test';
-import { createMysqlPool } from '../apps/api/src/db/mysql.js';
+import { createMysqlPool } from '../apps/api/src/infrastructure/mysql/mysql.js';
 
 test('MySQL creator login accepts the prior scrypt verifier and expires on logout',
   { skip: process.env.MYSQL_REMOTE_SMOKE !== '1' }, async () => {
-    const { createMysqlCreatorStore } = await import('../apps/api/src/db/mysql-auth-store.js');
+    const { createMysqlCreatorStore } = await import('../apps/api/src/infrastructure/mysql/mysql-auth-store.js');
     const pool = createMysqlPool(process.env);
     const id = randomUUID();
     const username = `test_${id.replaceAll('-', '').slice(0, 20)}`;
@@ -34,7 +34,7 @@ test('MySQL creator login accepts the prior scrypt verifier and expires on logou
 
 test('concurrent registration keeps one account and reports a readable duplicate error',
   { skip: process.env.MYSQL_REMOTE_SMOKE !== '1' }, async () => {
-    const { createMysqlCreatorStore } = await import('../apps/api/src/db/mysql-auth-store.js');
+    const { createMysqlCreatorStore } = await import('../apps/api/src/infrastructure/mysql/mysql-auth-store.js');
     const pool = createMysqlPool(process.env);
     const username = `test_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
     const store = createMysqlCreatorStore(pool);

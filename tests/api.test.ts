@@ -2,15 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../apps/api/src/app.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { AiServiceError, createChatAdapter } from '../apps/api/src/ai-adapter.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { AiServiceError, createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
 import { createInitialState } from '../packages/engine/src/index.js';
 import { loadScript } from '../packages/script/src/index.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
 import { ScriptNotFoundError } from '../apps/api/src/script-repository.js';
+import { withTestMysql } from './support/mysql-test-db.js';
 
 test('a removed published story detail responds 404 instead of a retryable bad request', async () => {
-  const saves = createSaveStore(':memory:');
+  await withTestMysql(async pool => {
+  const saves = createMysqlSaveStore(pool);
   const server = createApp(saves, createChatAdapter({}), { scripts: {
     get: () => { throw new ScriptNotFoundError(); },
     list: () => [],
@@ -22,19 +24,20 @@ test('a removed published story detail responds 404 instead of a retryable bad r
     assert.equal(response.status, 404);
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
-    saves.close();
   }
+  });
 });
 
 test('AI service failure returns a retryable status and keeps the auto save unchanged', async () => {
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
+  await withTestMysql(async pool => {
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
   const adapter = createChatAdapter({});
   adapter.generate = async () => { throw new AiServiceError('AI 服务暂时繁忙，请稍后重试；本次对话未保存。', 503); };
-  const server = createApp(store, adapter, { creatorStore: accounts }).listen(0);
+  const server = createApp(store, adapter, { creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  let cookie = `gd_creator=${accounts.register('api_failure', 'player-password-1').token}`;
+  let cookie = `gd_creator=${(await accounts.register('api_failure', 'player-password-1')).token}`;
   const request = async (path: string, method = 'GET', body?: unknown) => {
     const response = await fetch(`${base}${path}`, { method, headers: { Cookie: cookie, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body) });
@@ -51,17 +54,18 @@ test('AI service failure returns a retryable status and keeps the auto save unch
     assert.equal(current.body.view.chats['su-nian']?.length ?? 0, 0);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close(); accounts.close();
   }
+  });
 });
 
 test('the API serves one story, player form, auto save, and manual slots', async () => {
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
-  const server = createApp(store, createChatAdapter({}), { creatorStore: accounts }).listen(0);
+  await withTestMysql(async pool => {
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
+  const server = createApp(store, createChatAdapter({}), { creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  let cookie = `gd_creator=${accounts.register('api_story', 'player-password-1').token}`;
+  let cookie = `gd_creator=${(await accounts.register('api_story', 'player-password-1')).token}`;
   const request = async (path: string, method = 'GET', body?: unknown) => {
     const response = await fetch(`${base}${path}`, {
       method, headers: { Cookie: cookie, 'Content-Type': 'application/json' },
@@ -93,17 +97,18 @@ test('the API serves one story, player form, auto save, and manual slots', async
     assert.deepEqual(slots.body.slots.map((entry: any) => entry.slot), [0, 1]);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close(); accounts.close();
   }
+  });
 });
 
 test('Su Nian search reveals only eligible items and keeps revision protection', async () => {
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
-  const server = createApp(store, createChatAdapter({}), { creatorStore: accounts }).listen(0);
+  await withTestMysql(async pool => {
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
+  const server = createApp(store, createChatAdapter({}), { creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  let cookie = `gd_creator=${accounts.register('api_search', 'player-password-1').token}`;
+  let cookie = `gd_creator=${(await accounts.register('api_search', 'player-password-1')).token}`;
   const request = async (path: string, method = 'GET', body?: unknown) => {
     const response = await fetch(`${base}${path}`, { method,
       headers: { Cookie: cookie, 'Content-Type': 'application/json' },
@@ -129,13 +134,14 @@ test('Su Nian search reveals only eligible items and keeps revision protection',
     assert.deepEqual(taken.body.changes.filter((entry: any) => entry.kind === 'item_gained').map((entry: any) => entry.entityId), ['game-screenshot']);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close(); accounts.close();
   }
+  });
 });
 
 test('chat SSE drafts before final and a repeated turn ID does not generate twice', async () => {
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
+  await withTestMysql(async pool => {
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
   const adapter = createChatAdapter({});
   let calls = 0;
   adapter.generate = async (_context, onDraft) => {
@@ -143,10 +149,10 @@ test('chat SSE drafts before final and a repeated turn ID does not generate twic
     onDraft?.('你'); onDraft?.('好。');
     return { message: '你好。', proposedEventIds: [] };
   };
-  const server = createApp(store, adapter, { creatorStore: accounts }).listen(0);
+  const server = createApp(store, adapter, { creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  let cookie = `gd_creator=${accounts.register('api_stream', 'player-password-1').token}`;
+  let cookie = `gd_creator=${(await accounts.register('api_stream', 'player-password-1')).token}`;
   const request = async (route: string, body: object) => {
     const response = await fetch(`${base}${route}`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie')!.split(';')[0];
@@ -169,20 +175,22 @@ test('chat SSE drafts before final and a repeated turn ID does not generate twic
     assert.equal(wrongReuse.status, 400);
     assert.match(await wrongReuse.text(), /轮次 ID/);
     assert.equal(calls, 1);
-  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); store.close(); accounts.close(); }
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+  });
 });
 
 test('obsolete Su Nian saves cannot masquerade as playable slots or overwrite the current auto slot', async () => {
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
+  await withTestMysql(async pool => {
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
   const game = loadScript('sword-and-screen');
-  const player = accounts.register('api_old', 'player-password-1');
+  const player = await accounts.register('api_old', 'player-password-1');
   const owner = player.account.id;
   const old = createInitialState(game, { name: '旧档' });
   old.scriptVersion = '2.0.0';
-  store.putAuto(owner, game.id, old);
-  store.saveManual(owner, game.id, 1, '旧手动档', old);
-  const server = createApp(store, createChatAdapter({}), { creatorStore: accounts }).listen(0);
+  await store.putAuto(owner, game.id, old);
+  await store.saveManual(owner, game.id, 1, '旧手动档', old);
+  const server = createApp(store, createChatAdapter({}), { creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const request = async (route: string, method = 'GET') => {
@@ -200,19 +208,21 @@ test('obsolete Su Nian saves cannot masquerade as playable slots or overwrite th
       [{ slot: 0, version: '2.0.0', loadable: false }, { slot: 1, version: '2.0.0', loadable: false }]);
     const loaded = await request(`/api/games/${game.id}/slots/1/load`, 'POST');
     assert.notEqual(loaded.status, 200);
-    assert.equal(store.getAuto(owner, game.id)?.state.scriptVersion, '2.0.0');
-  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); store.close(); accounts.close(); }
+    assert.equal((await store.getAuto(owner, game.id))?.state.scriptVersion, '2.0.0');
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+  });
 });
 
 test('creator debug endpoint is opt-in and scoped to the current save owner', async () => {
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
+  await withTestMysql(async pool => {
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
   const adapter = createChatAdapter({});
   adapter.generate = async () => ({ message: '嗯？', proposedEventIds: ['close-talk'] });
-  const server = createApp(store, adapter, { debugEnabled: true, creatorStore: accounts }).listen(0);
+  const server = createApp(store, adapter, { debugEnabled: true, creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  let cookie = `gd_creator=${accounts.register('api_debug', 'player-password-1').token}`;
+  let cookie = `gd_creator=${(await accounts.register('api_debug', 'player-password-1')).token}`;
   const request = async (route: string, body?: unknown, otherCookie?: string) => {
     const response = await fetch(`${base}${route}`, { method: body === undefined ? 'GET' : 'POST',
       headers: { Cookie: otherCookie ?? cookie, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -228,28 +238,31 @@ test('creator debug endpoint is opt-in and scoped to the current save owner', as
     assert.deepEqual(debug.data.turns[0].acceptedIds, ['close-talk']);
     const outsider = await request('/api/games/sword-and-screen/debug', undefined, 'gd_guest=22222222-2222-4222-8222-222222222222');
     assert.notEqual(outsider.status, 200);
-  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); store.close(); accounts.close(); }
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+  });
 });
 
 test('GET current never awards gallery, and same-version content mismatch rejects saves', async () => {
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
+  await withTestMysql(async pool => {
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
   const game = loadScript('sword-and-screen');
-  const player = accounts.register('api_gallery', 'player-password-1');
+  const player = await accounts.register('api_gallery', 'player-password-1');
   const owner = player.account.id;
   const state = createInitialState(game, { name: '阿言' });
   state.npcIndicators!['su-nian'].metInPerson.value = true;
-  store.putAuto(owner, game.id, state);
-  const server = createApp(store, createChatAdapter({}), { creatorStore: accounts }).listen(0);
+  await store.putAuto(owner, game.id, state);
+  const server = createApp(store, createChatAdapter({}), { creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const get = (route: string) => fetch(`${base}${route}`, { headers: { Cookie: `gd_creator=${player.token}` } });
   try {
     assert.equal((await get(`/api/games/${game.id}/current`)).status, 200);
-    assert.deepEqual(store.getGallery(owner, game.id), []);
+    assert.deepEqual(await store.getGallery(owner, game.id), []);
     const changed = { ...state, scriptHash: '0'.repeat(64) };
-    store.putAuto(owner, game.id, changed);
+    await store.putAuto(owner, game.id, changed);
     assert.equal((await get(`/api/games/${game.id}/current`)).status, 400);
     assert.equal((await (await get('/api/catalog')).json() as any).games[0].hasAuto, false);
-  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); store.close(); accounts.close(); }
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+  });
 });

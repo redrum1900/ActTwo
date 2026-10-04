@@ -4,18 +4,18 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { createInitialState } from '@game/engine';
 import { loadScript } from '@game/script';
-import { createMysqlPool } from '../apps/api/src/db/mysql.js';
+import { createMysqlPool } from '../apps/api/src/infrastructure/mysql/mysql.js';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../apps/api/src/app.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createMysqlCreatorStore } from '../apps/api/src/db/mysql-auth-store.js';
-import { createMysqlProjectStore } from '../apps/api/src/db/mysql-project-store.js';
-import { createMysqlReviewStore } from '../apps/api/src/db/mysql-review-store.js';
-import { createMysqlSaveStore } from '../apps/api/src/db/mysql-save-store.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
+import { createMysqlProjectStore } from '../apps/api/src/infrastructure/mysql/mysql-project-store.js';
+import { createMysqlReviewStore } from '../apps/api/src/infrastructure/mysql/mysql-review-store.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
 
 test('MySQL save revisions and gallery commit atomically, and manual load restores state',
   { skip: process.env.MYSQL_REMOTE_SMOKE !== '1' }, async () => {
-    const { createMysqlSaveStore } = await import('../apps/api/src/db/mysql-save-store.js');
+    const { createMysqlSaveStore } = await import('../apps/api/src/infrastructure/mysql/mysql-save-store.js');
     const pool = createMysqlPool(process.env);
     const saves = createMysqlSaveStore(pool);
     const owner = `test-${randomUUID()}`;

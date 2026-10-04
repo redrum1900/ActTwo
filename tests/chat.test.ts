@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runChat, deriveChatContext } from '../apps/api/src/chat-service.js';
-import { selectChatMemory } from '../apps/api/src/chat-memory.js';
-import { buildAIState } from '../apps/api/src/ai-adapter.js';
+import { runChat, deriveChatContext } from '../apps/api/src/modules/gameplay/chat-service.js';
+import { selectChatMemory } from '../apps/api/src/modules/gameplay/chat-memory.js';
+import { buildAIState } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
 import { createInitialState, deriveNpcSnapshot } from '../packages/engine/src/index.js';
 import { loadScript } from '../packages/script/src/index.js';
 

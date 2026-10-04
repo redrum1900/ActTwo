@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 test('login queue resumes the requested action once after authentication', async () => {
-  const { createLoginQueue } = await import('../apps/web/src/AccountGate.js');
+  const { createLoginQueue } = await import('../apps/web/src/app/AccountGate.js');
   const queue = createLoginQueue();
   let starts = 0;
   queue.defer(() => { starts++; });
@@ -15,7 +15,7 @@ test('login queue resumes the requested action once after authentication', async
 
 test('anonymous player can browse catalog and login gate has a form', async () => {
   const [{ default: AccountGate, AccountForm }, { default: App }] = await Promise.all([
-    import('../apps/web/src/AccountGate.js'), import('../apps/web/src/App.js'),
+    import('../apps/web/src/app/AccountGate.js'), import('../apps/web/src/app/App.js'),
   ]);
   const catalog = renderToStaticMarkup(createElement(AccountGate, { requireLogin: false, children: createElement(App) }));
   assert.match(catalog, /故事目录/);
@@ -27,7 +27,7 @@ test('anonymous player can browse catalog and login gate has a form', async () =
 });
 
 test('a game continue deep link retains its target until login', async () => {
-  const { gameDeepLink } = await import('../apps/web/src/App.js');
+  const { gameDeepLink } = await import('../apps/web/src/app/App.js');
   assert.deepEqual(gameDeepLink('/games/sword-and-screen/continue'), { gameId: 'sword-and-screen', continue: true });
   assert.deepEqual(gameDeepLink('/games/sword-and-screen'), { gameId: 'sword-and-screen', continue: false });
   assert.equal(gameDeepLink('/creator'), null);

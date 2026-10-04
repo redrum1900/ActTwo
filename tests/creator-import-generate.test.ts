@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { swordStoryV2 } from '../scripts/sword-story-v2.js';
-import { createMainAiClient } from '../apps/api/src/creator/import-ai.js';
-import { generateImportDraft, ImportGenerationError } from '../apps/api/src/creator/import-generate.js';
+import { createMainAiClient } from '../apps/api/src/modules/creator/import/import-ai.js';
+import { generateImportDraft, ImportGenerationError } from '../apps/api/src/modules/creator/import/import-generate.js';
 
 const valid = JSON.stringify({ story: swordStoryV2, inferences: ['补足开局地点'] });
 const client = (answers: string[]) => {

@@ -1,19 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../apps/api/src/app.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
-import { createProjectStore } from '../apps/api/src/creator/project-store.js';
-import { createReviewStore } from '../apps/api/src/creator/review-store.js';
-import { patchManifest } from '../apps/web/src/creator/section-forms.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { patchManifest } from '../apps/web/src/creator/model/section-forms.js';
+import { withCreatorMysql } from './support/creator-mysql.js';
 
 test('author saves a new location before selecting it as the story start', async () => {
-  const accounts = createCreatorStore(':memory:');
-  const projects = createProjectStore(accounts.db);
-  const reviews = createReviewStore(accounts.db, projects);
-  const saves = createSaveStore(':memory:');
-  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects, reviewStore: reviews }).listen(0);
+  await withCreatorMysql(async ({ pool, accounts, projects, reviews }) => {
+  const saves = createMysqlSaveStore(pool);
+  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects,
+    reviewStore: reviews, mysqlPool: pool }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/creator`;
   let cookie = '';
@@ -41,5 +38,6 @@ test('author saves a new location before selecting it as the story start', async
     assert.equal(JSON.parse(reloaded.sections['manifest.json'].content).startLocation, 'cafe');
     assert.equal(JSON.parse(reloaded.sections['locations.json'].content)[1].custom, 'keep');
     assert.equal((await request(`${story}/validate`, 'POST')).value.errors.length, 0);
-  } finally { server.close(); accounts.close(); saves.close(); }
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
 });

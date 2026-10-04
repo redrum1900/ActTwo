@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const catalog = readFileSync(new URL('../apps/web/src/StoryCatalogPage.tsx', import.meta.url), 'utf8');
-const detail = readFileSync(new URL('../apps/web/src/StoryDetailPage.tsx', import.meta.url), 'utf8');
-const gameplay = readFileSync(new URL('../apps/web/src/GameplayPage.tsx', import.meta.url), 'utf8');
+const catalog = readFileSync(new URL('../apps/web/src/catalog/StoryCatalogPage.tsx', import.meta.url), 'utf8');
+const detail = readFileSync(new URL('../apps/web/src/story-detail/StoryDetailPage.tsx', import.meta.url), 'utf8');
+const gameplay = readFileSync(new URL('../apps/web/src/gameplay/GameplayPage.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../apps/web/src/styles.css', import.meta.url), 'utf8');
 
 test('catalog, subpages, and game expose sticky page headers', () => {

@@ -1,6 +1,6 @@
 ---
 name: novel-card-to-game-config
-description: Use when converting a novel, story outline, or character card into complete Game DD creator JSON, or maintaining the AI rules used by the creator quick-import feature.
+description: Use when converting a novel, story outline, or character card into complete ACT II creator JSON, or maintaining the AI rules used by the creator quick-import feature.
 ---
 
 # 小说角色卡转化配置

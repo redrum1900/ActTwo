@@ -3,7 +3,7 @@
 .creator-app-editing > .creator-header { flex: 0 0 auto; }
 .creator-app button:focus-visible, .creator-app a:focus-visible, .creator-app input:focus-visible, .creator-app textarea:focus-visible, .creator-app select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .creator-header { position: sticky; top: 0; z-index: 50; height: 76px; background: var(--deep); color: #f3f1e9; display: flex; align-items: center; justify-content: space-between; padding: 0 clamp(24px, 4.5vw, 72px); gap: 20px; }
-.creator-brand { font: 600 23px 'Songti SC', serif; white-space: nowrap; }
+.creator-brand { font: 700 23px 'DM Sans', sans-serif; letter-spacing: .06em; white-space: nowrap; }
 .creator-brand span { color: #bdc7c4; font: 500 12px 'DM Sans', 'PingFang SC', sans-serif; letter-spacing: .08em; }
 .creator-header-nav { align-self: stretch; display: flex; align-items: stretch; justify-content: center; gap: 8px; margin-left: auto; }
 .creator-header-nav button { position: relative; min-width: 78px; border: 0; background: none; color: #bac8c5; padding: 0 13px; font-size: 12px; font-weight: 700; white-space: nowrap; }

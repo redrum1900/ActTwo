@@ -4,14 +4,16 @@ import type { AddressInfo } from 'node:net';
 import { createServer as createViteServer } from 'vite';
 import viteConfig from '../vite.config.js';
 import { createApp } from '../apps/api/src/app.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { withTestMysql } from './support/mysql-test-db.js';
 
 test('development proxy preserves browser host for creator login origin check', async () => {
-  const creators = createCreatorStore(':memory:');
-  const saves = createSaveStore(':memory:');
-  const api = createApp(saves, createChatAdapter({}), { creatorStore: creators }).listen(0, '127.0.0.1');
+  await withTestMysql(async pool => {
+  const creators = createMysqlCreatorStore(pool);
+  const saves = createMysqlSaveStore(pool);
+  const api = createApp(saves, createChatAdapter({}), { creatorStore: creators, mysqlPool: pool }).listen(0, '127.0.0.1');
   await new Promise<void>(resolve => api.once('listening', resolve));
   const apiPort = (api.address() as AddressInfo).port;
   const configuredProxy = viteConfig.server?.proxy?.['/api'];
@@ -31,6 +33,6 @@ test('development proxy preserves browser host for creator login origin check', 
   } finally {
     await vite.close();
     await new Promise<void>((resolve, reject) => api.close(error => error ? reject(error) : resolve()));
-    creators.close(); saves.close();
   }
+  });
 });

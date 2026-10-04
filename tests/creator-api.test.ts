@@ -1,18 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../apps/api/src/app.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
-import { createProjectStore } from '../apps/api/src/creator/project-store.js';
-import { createReviewStore } from '../apps/api/src/creator/review-store.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { withCreatorMysql } from './support/creator-mysql.js';
 
 test('creator API isolates owners and publishes only valid drafts', async () => {
-  const creators = createCreatorStore(':memory:');
-  const projects = createProjectStore(creators.db);
-  const reviews = createReviewStore(creators.db, projects);
-  const saves = createSaveStore(':memory:');
-  const server = createApp(saves, createChatAdapter({}), { creatorStore: creators, projectStore: projects, reviewStore: reviews }).listen(0);
+  await withCreatorMysql(async ({ pool, accounts, projects, reviews }) => {
+  const saves = createMysqlSaveStore(pool);
+  const server = createApp(saves, createChatAdapter({}), { creatorStore: accounts, projectStore: projects,
+    reviewStore: reviews, mysqlPool: pool }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   let cookie = '';
@@ -31,13 +28,12 @@ test('creator API isolates owners and publishes only valid drafts', async () => 
     assert.match(generated.data.id, /^story-[0-9a-f-]{36}$/);
     assert.equal(JSON.parse(generated.data.sections['manifest.json'].content).id, generated.data.id);
     const copied = await call('/projects', 'POST', { title: '复制示例', templateId: 'sword-and-screen' });
-    assert.equal(copied.status, 201);
-    assert.notEqual(copied.data.id, generated.data.id);
-    assert.equal(JSON.parse(copied.data.sections['manifest.json'].content).id, copied.data.id);
+    assert.equal(copied.status, 400);
+    assert.match(copied.data.error, /模板不存在/);
     const created = await call('/projects', 'POST', { title: '第一个故事' });
     assert.equal(created.status, 201);
     assert.equal(created.data.sections['manifest.json'].revision, 1);
-    assert.equal((await call('/projects')).data.projects.length, 3);
+    assert.equal((await call('/projects')).data.projects.length, 2);
     const storyPath = `/projects/${created.data.id}`;
     const old = created.data.sections['manifest.json'];
     assert.equal((await call(`${storyPath}/sections`, 'PUT', { path: 'manifest.json', content: old.content, revision: 1 })).status, 200);
@@ -51,5 +47,6 @@ test('creator API isolates owners and publishes only valid drafts', async () => 
     assert.equal((await call(storyPath)).status, 404);
     assert.equal((await call(`${storyPath}/validate`, 'POST')).status, 404);
     assert.equal((await call('/projects')).data.projects.length, 0);
-  } finally { server.close(); creators.close(); saves.close(); }
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
 });

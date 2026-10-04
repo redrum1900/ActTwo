@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePlayerRoute, playerRoutePath } from '../apps/web/src/player-route.js';
+import { parsePlayerRoute, playerRoutePath } from '../apps/web/src/app/player-route.js';
 
 test('player routes distinguish catalog, detail, and gameplay', () => {
   assert.deepEqual(parsePlayerRoute('/'), { route: { kind: 'catalog' } });

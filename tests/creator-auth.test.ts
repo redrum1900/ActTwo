@@ -1,14 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../apps/api/src/app.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
+import { withTestMysql } from './support/mysql-test-db.js';
 
 test('creator accounts have durable login sessions separate from guest saves', async () => {
-  const creators = createCreatorStore(':memory:');
-  const saves = createSaveStore(':memory:');
-  const server = createApp(saves, createChatAdapter({}), { creatorStore: creators }).listen(0);
+  await withTestMysql(async pool => {
+  const creators = createMysqlCreatorStore(pool);
+  const saves = createMysqlSaveStore(pool);
+  const server = createApp(saves, createChatAdapter({}), { creatorStore: creators, mysqlPool: pool }).listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   let cookie = '';
@@ -37,6 +39,7 @@ test('creator accounts have durable login sessions separate from guest saves', a
     assert.equal((await request('/logout', 'POST', undefined, { Origin: 'https://evil.example' })).response.status, 403);
     assert.equal((await request('/me')).response.status, 200);
   } finally {
-    server.close(); creators.close(); saves.close();
+    await new Promise<void>(resolve => server.close(() => resolve()));
   }
+  });
 });

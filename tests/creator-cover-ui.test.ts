@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import CoverArtwork from '../apps/web/src/cover-artwork.js';
-import { saveWithCover } from '../apps/web/src/creator/cover-save.js';
+import CoverArtwork from '../apps/web/src/shared/cover-artwork.js';
+import { saveWithCover } from '../apps/web/src/creator/session/cover-save.js';
 
 test('published image cover renders an image while legacy text cover remains text', () => {
   const image = renderToStaticMarkup(createElement(CoverArtwork, { cover: '/api/covers/abc', fallback: '故' }));

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import { createPlaytestRouter } from '../apps/api/src/creator/playtest-router.js';
+import { createPlaytestRouter } from '../apps/api/src/modules/playtest/router.js';
 import { swordStoryV2 } from '../scripts/sword-story-v2.js';
 import { createInitialState } from '@game/engine';
 

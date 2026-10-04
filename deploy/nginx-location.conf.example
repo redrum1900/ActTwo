@@ -1,0 +1,18 @@
+# 放入宝塔创建的 HTTPS 站点的 server 块，不要覆盖宝塔管理的证书配置。
+# ACT II 的前端页面、API 和试玩深链接由同一个 Node 进程提供。
+location / {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # 对话采用流式响应；默认代理缓冲会使玩家迟迟看不到增量文本。
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+
+    # 智能导入没有产品级文件大小上限。公网部署前应结合磁盘配额、
+    # 请求速率和并发限制评估上传风险。
+    client_max_body_size 0;
+}

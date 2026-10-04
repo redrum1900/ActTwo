@@ -4,13 +4,13 @@ import test from 'node:test';
 import type { RowDataPacket } from 'mysql2';
 
 test('missing MySQL settings fail instead of falling back to SQLite', async () => {
-  const { createMysqlPool } = await import('../apps/api/src/db/mysql.js');
+  const { createMysqlPool } = await import('../apps/api/src/infrastructure/mysql/mysql.js');
   assert.throws(() => createMysqlPool({}), /MYSQL_HOST/);
 });
 
 test('remote connection is encrypted and migration is idempotent', { skip: process.env.MYSQL_REMOTE_SMOKE !== '1' }, async () => {
-  const { createMysqlPool, withTransaction } = await import('../apps/api/src/db/mysql.js');
-  const { migrateMysql } = await import('../apps/api/src/db/migrations.js');
+  const { createMysqlPool, withTransaction } = await import('../apps/api/src/infrastructure/mysql/mysql.js');
+  const { migrateMysql } = await import('../apps/api/src/infrastructure/mysql/migrations.js');
   const pool = createMysqlPool(process.env);
   try {
     const [status] = await pool.query<RowDataPacket[]>("SHOW SESSION STATUS LIKE 'Ssl_cipher'");

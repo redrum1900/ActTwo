@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createMainAiClient } from '../apps/api/src/creator/import-ai.js';
-import { deriveChatContext } from '../apps/api/src/chat-service.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { createMainAiClient } from '../apps/api/src/modules/creator/import/import-ai.js';
+import { deriveChatContext } from '../apps/api/src/modules/gameplay/chat-service.js';
 import { createInitialState } from '@game/engine';
 import { loadScript } from '@game/script';
-import type { AiCallRecord } from '../apps/api/src/ai-audit.js';
+import type { AiCallRecord } from '../apps/api/src/infrastructure/ai/ai-audit.js';
 
 test('every provider attempt is audited with attribution and unknown usage remains null', async () => {
   const prior = globalThis.fetch;

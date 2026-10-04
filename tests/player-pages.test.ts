@@ -1,10 +1,10 @@
 import test, { after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
-import AccountGate from '../apps/web/src/AccountGate.js';
-import StoryCatalogPage from '../apps/web/src/StoryCatalogPage.js';
-import StoryDetailPage from '../apps/web/src/StoryDetailPage.js';
-import App, { GameplayPage } from '../apps/web/src/App.js';
+import AccountGate from '../apps/web/src/app/AccountGate.js';
+import StoryCatalogPage from '../apps/web/src/catalog/StoryCatalogPage.js';
+import StoryDetailPage from '../apps/web/src/story-detail/StoryDetailPage.js';
+import App, { GameplayPage } from '../apps/web/src/app/App.js';
 import { installPlayerDom } from './player-dom.js';
 
 const originalFetch = globalThis.fetch;

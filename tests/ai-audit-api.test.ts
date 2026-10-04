@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import { createAiAuditRouter } from '../apps/api/src/ai-audit-router.js';
+import { createAiAuditRouter } from '../apps/api/src/modules/usage/router.js';
 
 test('usage endpoints require login and admin scope', async () => {
   const app = express();

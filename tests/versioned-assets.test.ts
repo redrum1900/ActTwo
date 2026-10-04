@@ -4,8 +4,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Pool } from 'mysql2/promise';
-import { createMysqlCoverAssets } from '../apps/api/src/db/mysql-cover-assets.js';
-import type { MysqlProjectStore } from '../apps/api/src/db/mysql-project-store.js';
+import { createMysqlCoverAssets } from '../apps/api/src/infrastructure/mysql/mysql-cover-assets.js';
+import type { MysqlProjectStore } from '../apps/api/src/infrastructure/mysql/mysql-project-store.js';
 
 test('an image referenced only by an older published snapshot stays public', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'game-version-asset-'));

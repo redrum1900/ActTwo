@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { swordStoryV2 } from '../scripts/sword-story-v2.js';
-import { generateImportDraft } from '../apps/api/src/creator/import-generate.js';
+import { generateImportDraft } from '../apps/api/src/modules/creator/import/import-generate.js';
 
 test('long source reaches the model once and retains its ending', async () => {
   const source = `${'甲'.repeat(90_000)}末尾秘密`;

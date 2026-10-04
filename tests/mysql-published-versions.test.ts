@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Pool } from 'mysql2/promise';
 import { loadScript } from '@game/script';
-import { createMysqlReviewStore } from '../apps/api/src/db/mysql-review-store.js';
-import { createMysqlProjectStore, type MysqlProjectStore } from '../apps/api/src/db/mysql-project-store.js';
-import { createMysqlPublishedVersions, releaseVersion } from '../apps/api/src/db/mysql-published-versions.js';
-import { migrateMysql } from '../apps/api/src/db/migrations.js';
+import { createMysqlReviewStore } from '../apps/api/src/infrastructure/mysql/mysql-review-store.js';
+import { createMysqlProjectStore, type MysqlProjectStore } from '../apps/api/src/infrastructure/mysql/mysql-project-store.js';
+import { createMysqlPublishedVersions, releaseVersion } from '../apps/api/src/infrastructure/mysql/mysql-published-versions.js';
+import { migrateMysql } from '../apps/api/src/infrastructure/mysql/migrations.js';
 
 test('approved release sequence produces stable display versions past 1.9', () => {
   assert.equal(releaseVersion(1), '1.0');

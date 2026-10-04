@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { readAiFallbacks } from '../apps/api/src/ai-config.js';
-import { deriveChatContext } from '../apps/api/src/chat-service.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { readAiFallbacks } from '../apps/api/src/infrastructure/ai/ai-config.js';
+import { deriveChatContext } from '../apps/api/src/modules/gameplay/chat-service.js';
 import { createInitialState } from '@game/engine';
 import { loadScript } from '@game/script';
 

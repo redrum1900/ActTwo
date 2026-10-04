@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import { createMysqlPool } from '../apps/api/src/db/mysql.js';
-import { migrateMysql } from '../apps/api/src/db/migrations.js';
-import { createMysqlCreatorStore } from '../apps/api/src/db/mysql-auth-store.js';
+import { createMysqlPool } from '../apps/api/src/infrastructure/mysql/mysql.js';
+import { migrateMysql } from '../apps/api/src/infrastructure/mysql/migrations.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
 
 const username = process.argv[2];
 if (!username) throw new Error('用法：npm run admin:create -- <用户名>');

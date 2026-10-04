@@ -5,11 +5,13 @@ import type { GameScript } from '@game/contracts';
 import { createInitialState } from '@game/engine';
 import { contentHashOf, loadScript } from '@game/script';
 import { createApp } from '../apps/api/src/app.js';
-import { createChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { createSaveStore } from '../apps/api/src/save-store.js';
-import { createCreatorStore } from '../apps/api/src/creator/auth-store.js';
+import { createChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { createMysqlSaveStore } from '../apps/api/src/infrastructure/mysql/mysql-save-store.js';
+import { createMysqlCreatorStore } from '../apps/api/src/infrastructure/mysql/mysql-auth-store.js';
+import { withTestMysql } from './support/mysql-test-db.js';
 
 test('old auto and manual saves use their own script after a newer release', async () => {
+  await withTestMysql(async pool => {
   const fixture = loadScript('sword-and-screen');
   const version = (value: string): GameScript => {
     const script = { ...fixture, version: value };
@@ -22,18 +24,18 @@ test('old auto and manual saves use their own script after a newer release', asy
   const scripts = { get: async () => latest, list: async () => [latest],
     getExact: async (_id: string, label: string, hash: string) =>
       [old, next].find(script => script.version === label && script.contentHash === hash) ?? null };
-  const store = createSaveStore(':memory:');
-  const accounts = createCreatorStore(':memory:');
-  const player = accounts.register('version_player', 'player-password-1');
-  const server = createApp(store, createChatAdapter({}), { scripts, creatorStore: accounts }).listen(0);
+  const store = createMysqlSaveStore(pool);
+  const accounts = createMysqlCreatorStore(pool);
+  const player = await accounts.register('version_player', 'player-password-1');
+  const server = createApp(store, createChatAdapter({}), { scripts, creatorStore: accounts, mysqlPool: pool }).listen(0);
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   try {
     const cookie = `gd_creator=${player.token}`;
     const owner = player.account.id;
     const state = createInitialState(old, { name: '测试' });
-    store.putAuto(owner, old.id, state);
-    store.saveManual(owner, old.id, 1, '旧档', state);
+    await store.putAuto(owner, old.id, state);
+    await store.saveManual(owner, old.id, 1, '旧档', state);
     latest = next;
     const current = await fetch(`${base}/api/games/${old.id}/current`, { headers: { Cookie: cookie } });
     assert.equal(current.status, 200);
@@ -44,9 +46,9 @@ test('old auto and manual saves use their own script after a newer release', asy
     old.title = '篡改后的标题';
     const tampered = await fetch(`${base}/api/games/${old.id}/current`, { headers: { Cookie: cookie } });
     assert.notEqual(tampered.status, 200);
-    assert.equal(store.getAuto(owner, old.id)?.state.scriptVersion, '1.0');
+    assert.equal((await store.getAuto(owner, old.id))?.state.scriptVersion, '1.0');
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
-    store.close(); accounts.close();
   }
+  });
 });

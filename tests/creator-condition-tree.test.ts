@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { patchCondition, conditionIssues, changeConditionKind, type ConditionSources } from '../apps/web/src/creator/condition-tree.js';
-import * as tree from '../apps/web/src/creator/condition-tree.js';
-import { conditionSourcesFromSections } from '../apps/web/src/creator/condition-sources.js';
+import { patchCondition, conditionIssues, changeConditionKind, type ConditionSources } from '../apps/web/src/creator/model/condition-tree.js';
+import * as tree from '../apps/web/src/creator/model/condition-tree.js';
+import { conditionSourcesFromSections } from '../apps/web/src/creator/model/condition-sources.js';
 import { pruneLegacyCondition } from '@game/contracts';
 
 const sources: ConditionSources = {

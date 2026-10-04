@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import SectionEditor from '../apps/web/src/creator/SectionEditor.js';
-import ManifestEditor from '../apps/web/src/creator/ManifestEditor.js';
-import LocationsEditor from '../apps/web/src/creator/LocationsEditor.js';
-import { patchItemsImages, saveWithItemImages } from '../apps/web/src/creator/item-image-save.js';
+import SectionEditor from '../apps/web/src/creator/editor/SectionEditor.js';
+import ManifestEditor from '../apps/web/src/creator/editor/ManifestEditor.js';
+import LocationsEditor from '../apps/web/src/creator/editor/LocationsEditor.js';
+import { patchItemsImages, saveWithItemImages } from '../apps/web/src/creator/session/item-image-save.js';
 
 test('image selection stays local until Save uploads and patches the matching item ID', async () => {
   const original = JSON.stringify([{ id: 'first', name: '第一项' }, { id: 'second', name: '第二项' }]);

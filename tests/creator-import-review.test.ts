@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { reviewImport } from '../apps/api/src/creator/import-review.js';
+import { reviewImport } from '../apps/api/src/modules/creator/import/import-review.js';
 
 const parts = { 'manifest.json': '{"title":"秋日"}', 'npcs/lin/personas.json': '[{"content":"她曾经去过海边"}]' };
 

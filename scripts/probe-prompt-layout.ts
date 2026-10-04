@@ -1,22 +1,17 @@
 import 'dotenv/config';
-import Database from 'better-sqlite3';
 import { readFile, writeFile } from 'node:fs/promises';
-import { createCombinedChatAdapter } from '../apps/api/src/ai-adapter.js';
-import { deriveChatContext } from '../apps/api/src/chat-service.js';
-import { readChatCompletionStream } from '../apps/api/src/ai-stream.js';
-import { loadScript } from '../packages/script/src/index.js';
-import type { GameState } from '../packages/contracts/src/index.js';
-import { summarizeCosts } from '../apps/api/src/ai-cost.js';
+import { createCombinedChatAdapter } from '../apps/api/src/infrastructure/ai/ai-adapter.js';
+import { deriveChatContext } from '../apps/api/src/modules/gameplay/chat-service.js';
+import { readChatCompletionStream } from '../apps/api/src/infrastructure/ai/ai-stream.js';
+import { loadProbeSource } from './probe-source.js';
+import { summarizeCosts } from '../apps/api/src/infrastructure/ai/ai-cost.js';
 
 if (!process.argv.includes('--live')) throw new Error('此测试会产生四次付费请求，确认后传入 --live');
 if (!process.env.AI_API_KEY) throw new Error('缺少AI密钥');
-const db = new Database('data/game.sqlite', { readonly: true });
-const row = db.prepare('SELECT state_json FROM save_slots WHERE game_id=? AND slot=0 ORDER BY updated_at DESC LIMIT 1')
-  .get('sword-and-screen') as { state_json: string } | undefined;
-db.close();
-if (!row) throw new Error('没有可测试的存档');
-const base: GameState = JSON.parse(row.state_json);
-const script = loadScript('sword-and-screen');
+const { script, state: base } = await loadProbeSource(true);
+if (!base) throw new Error('没有可测试的存档');
+const npc = script.npcs.find(entry => entry.id === 'su-nian');
+if (!npc) throw new Error('该探针只支持包含 su-nian 的故事');
 const runId = `prefix-${Date.now()}`;
 const logPath = `data/${runId}.jsonl`;
 const realFetch = globalThis.fetch;
@@ -42,7 +37,7 @@ try {
       const turnId = `${runId}-${promptLayout}-${i}`;
       try {
         reply = await createCombinedChatAdapter({ apiKey: process.env.AI_API_KEY, baseUrl: process.env.AI_BASE_URL,
-          model: process.env.AI_MODEL, logPath, promptLayout }).generate(deriveChatContext(script, state, script.npcs.find(n => n.id === 'su-nian')!, text, turnId));
+          model: process.env.AI_MODEL, logPath, promptLayout }).generate(deriveChatContext(script, state, npc, text, turnId));
       } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); }
       const raw = captured ? await captured.catch(() => undefined) : undefined;
       let rawShape = 'unavailable';

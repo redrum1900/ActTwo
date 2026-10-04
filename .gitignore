@@ -11,4 +11,5 @@ coverage/
 .vite/
 .idea/
 .vscode/
-.superpowers/sdd/2026-10-01-creator-center/
+.superpowers/
+docs/superpowers/
